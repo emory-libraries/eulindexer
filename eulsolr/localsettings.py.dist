@@ -1,0 +1,76 @@
+from os import path
+
+# Get the directory of this file for relative dir paths.
+# Django sets too many absolute paths.
+BASE_DIR = path.dirname(path.abspath(__file__))
+
+# Django settings for rushdie project.
+
+DEBUG = False
+TEMPLATE_DEBUG = DEBUG
+
+ADMINS = (
+    # ('Your Name', 'your_email@domain.com'),
+)
+
+MANAGERS = ADMINS
+
+# NB: This application doesn't use a relational database.
+
+TIME_ZONE = 'America/New_York'
+
+# Language code for this installation. All choices can be found here:
+# http://www.i18nguy.com/unicode/language-identifiers.html
+LANGUAGE_CODE = 'en-us'
+
+APPLICATION_URLS=['http://localhost:8000/indexdata/']
+
+# basic logging configuration for django 1.3 - adjust as needed
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': {
+        'basic': {
+            'format': '[%(asctime)s] %(levelname)s:%(name)s::%(message)s',
+            'datefmt': '%d/%b/%Y %H:%M:%S',
+         },
+    },
+    'handlers': {
+        'null': {
+            'level':'DEBUG',
+            'class':'django.utils.log.NullHandler',
+        },
+        'console':{
+            'level':'DEBUG',
+            'class':'logging.StreamHandler',
+            'formatter': 'basic'
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'class': 'django.utils.log.AdminEmailHandler',
+        }
+    },
+    'loggers': {
+        'django': {
+            'handlers':['null'],
+            'propagate': True,
+            'level':'DEBUG',
+        },
+        'django.request': {
+            'handlers': ['mail_admins'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'eulfedora': {
+            'handlers':['console'],
+            'propagate': True,
+            'level':'DEBUG',
+        },
+        'eulsolr': {
+            'handlers':['console'],
+            'propagate': True,
+            'level':'DEBUG',
+        }
+    }
+}
+ 

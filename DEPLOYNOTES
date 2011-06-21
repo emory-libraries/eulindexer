@@ -1,0 +1,36 @@
+Deploy Notes
+============
+
+Remove Old Rushdie Gsearch Configuration
+----------------------------------------
+
+1. Under <fedora_home>/tomcat/webapps/fedoragsearch/WEB-INF/classes/config, edit fedoragsearch.properties
+    a. Find the text: fedoragsearch.indexNames
+    b. Remove the "RushdieSolr" entry.
+
+2. Under <fedora_home>/tomcat/webapps/fedoragsearch/WEB-INF/classes/config/index
+    a. Remove the RushdieSolr directory.
+
+3. Shutdown fedora.
+
+4. Shutdown Solr.
+
+5. Under <fedora_home>/gsearch/solr/ssl-multicore/rushdie/
+    a. Remove the data directory.
+
+6. Restart Solr and Fedora.
+
+
+New Index Code Install
+----------------------
+
+
+
+rsk notes
+create virtualenv
+- don't need celery ? 
+- why eulcore and not eulfedora  (etc.)?
+- no notes about local settings
+
+
+no manage.py ?

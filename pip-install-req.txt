@@ -1,0 +1,4 @@
+-e git://github.com/emory-libraries/eulfedora.git@indexdata#egg=eulfedora
+sunburnt
+httplib2
+stompest
