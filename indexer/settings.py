@@ -35,7 +35,7 @@ MIDDLEWARE_CLASSES = (
 
 INSTALLED_APPS = (
     'eulfedora',
-    'eulsolr.indexer',
+    'eulindexer.indexer',
 )
 
 REPO_DOCUMENT_CLASS = 'fedora.models.DocumentObject'
