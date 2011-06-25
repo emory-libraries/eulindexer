@@ -25,6 +25,12 @@ LANGUAGE_CODE = 'en-us'
 
 APPLICATION_URLS=['http://localhost:8000/indexdata/']
 
+# Needed for some tests - should this be mocked out?
+FEDORA_ROOT='http://localhost:8080/fedora/'
+FEDORA_TEST_ROOT='http://localhost:8080/fedora/'
+FEDORA_TEST_USER='fedoraAdmin'
+FEDORA_TEST_PASSWORD='fedoraAdmin'
+
 # basic logging configuration for django 1.3 - adjust as needed
 LOGGING = {
     'version': 1,
@@ -66,7 +72,7 @@ LOGGING = {
             'propagate': True,
             'level':'DEBUG',
         },
-        'eulsolr': {
+        'eulindexer': {
             'handlers':['console'],
             'propagate': True,
             'level':'DEBUG',

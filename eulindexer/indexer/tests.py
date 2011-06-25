@@ -28,8 +28,8 @@ from django.test import Client, TestCase
 from eulfedora.models import DigitalObject, FileDatastream
 from eulfedora.server import Repository
 
-from eulsolr.indexer.management.commands import indexer
-from eulsolr.indexer.pdf import pdf_to_text
+from eulindexer.indexer.management.commands import indexer
+from eulindexer.indexer.pdf import pdf_to_text
 
 class IndexerTest(TestCase):
     def setUp(self):
@@ -44,7 +44,7 @@ class IndexerTest(TestCase):
         # on first startup - should raise a command error
         mockstomp = Mock(Stomp)
         mockstomp.side_effect = socket_error
-        with patch('eulsolr.indexer.management.commands.indexer.Stomp',
+        with patch('eulindexer.indexer.management.commands.indexer.Stomp',
                    new=mockstomp):
             self.assertRaises(CommandError, self.command.handle, verbosity=0)
 
@@ -60,7 +60,7 @@ class IndexerTest(TestCase):
         mocklistener.canRead.return_value = True
         mocklistener.receiveFrame.side_effect = StompFrameError
         
-        with patch('eulsolr.indexer.management.commands.indexer.Stomp',
+        with patch('eulindexer.indexer.management.commands.indexer.Stomp',
                    new=Mock(return_value=mocklistener)):
             self.assertRaises(CommandError, self.command.reconnect_listener)
             # listener.connect should be called the configured # of retries
@@ -78,7 +78,7 @@ class IndexerTest(TestCase):
                 return DEFAULT
         mocklistener.connect.side_effect = err_then_connect
 
-        with patch('eulsolr.indexer.management.commands.indexer.Stomp',
+        with patch('eulindexer.indexer.management.commands.indexer.Stomp',
                    new=Mock(return_value=mocklistener)):
             # should return without raising an exception
             self.command.reconnect_listener()
@@ -102,7 +102,7 @@ class PdfToTextTest(TestCase):
                                settings.FEDORA_TEST_PASSWORD)
         with open(self.pdf_filepath) as pdf:
             self.pdfobj = self.repo.get_object(type=TestPdfObject)
-            self.pdfobj.label = 'eulsolr test pdf object'
+            self.pdfobj.label = 'eulindexer test pdf object'
             self.pdfobj.pdf.content = pdf
             self.pdfobj.save()
 

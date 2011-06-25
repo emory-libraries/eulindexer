@@ -88,17 +88,13 @@ class Command(BaseCommand):
             response = urllib2.urlopen(url)
             json_value = response.read()
             parsed_json = simplejson.loads(json_value)
-            
-            for item in parsed_json:
-                for category, category_value in item.iteritems():
-                    if(category == 'SOLR_URL'):
-                        solr_url = category_value
-                        logger.info('SOLR URL for %s is: %s' % (url, category_value))
-            for item in parsed_json:
-                for category, category_value in item.iteritems():
-                    if(category == 'CONTENT_MODEL'):
-                        logger.info('content model for %s is: %s' % (url, category_value))
-                        self.index_types.append([category_value, solr_url, url])
+            for item, item_value in parsed_json.iteritems():
+                if(item == 'SOLR_URL'):
+                    solr_url = item_value
+                    logger.info('SOLR URL for %s is: %s' % (url, item_value))
+                if(item == 'CONTENT_MODELS'):
+                    logger.info('content model for %s is: %s' % (url, item_value))
+                    #self.index_types.append([category_value, solr_url, url])
 
 
     def handle(self, *args, **options):
