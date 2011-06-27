@@ -167,6 +167,9 @@ class Command(BaseCommand):
                 # it can't connect within the specified time/number of retries
                 self.reconnect_listener()
 
+            #Process the index queue for any items that need it.
+            self.process_index_queue()
+
 
     def reconnect_listener(self):
         '''Attempt to reconnect the listener, e.g. if Fedora is
@@ -226,8 +229,8 @@ class Command(BaseCommand):
                         self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
                         break
 
-                        
-        # check if there are any items that should be indexed now
+    def process_index_queue(self):
+        #check if there are any items that should be indexed now
         if self.to_index:
             logger.debug('objects to be indexed: %r' % self.to_index)
 
@@ -243,6 +246,7 @@ class Command(BaseCommand):
             # clear out any pids that were indexed from the list of objects still to be indexed
             for pid in indexed:
                 del self.to_index[pid]
+                
 
     def process_index_item(self, pid):
         '''Attempt to process an item in the index list. If this fails,
