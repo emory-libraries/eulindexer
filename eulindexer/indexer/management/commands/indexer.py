@@ -34,7 +34,7 @@ from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
 from django.utils import simplejson
-#from indexer.models import IndexerSettings
+from eulindexer.indexer.models import IndexerSettings
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +82,20 @@ class Command(BaseCommand):
         self.listener.subscribe('/topic/fedora.apim.update', {'ack': 'client'})  #  can we use auto-ack ?
 
     def init_cmodel_settings(self, *args, **options):
-        self.index_types = []
+        self.index_settings = []
         for url in settings.APPLICATION_URLS:
-            solr_url = ''
+            indexer_setting = IndexerSettings(url)
+            self.index_settings.append(indexer_setting)
             response = urllib2.urlopen(url)
             json_value = response.read()
             parsed_json = simplejson.loads(json_value)
             for item, item_value in parsed_json.iteritems():
                 if(item == 'SOLR_URL'):
-                    solr_url = item_value
+                    indexer_setting.solr_url = item_value
                     logger.info('SOLR URL for %s is: %s' % (url, item_value))
                 if(item == 'CONTENT_MODELS'):
+                    indexer_setting.CMODEL_list = item_value
                     logger.info('content model for %s is: %s' % (url, item_value))
-                    #self.index_types.append([category_value, solr_url, url])
 
 
     def handle(self, *args, **options):
@@ -130,8 +131,8 @@ class Command(BaseCommand):
 
         if verbosity > 1:
             self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
-            for cmodel, solr_url, app_url in self.index_types:
-                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (cmodel, solr_url, app_url))
+            for index_setting in self.index_settings:
+                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.list_CMODELS(), index_setting.solr_url, index_setting.app_url))
 
         while (True):
             # check if there is a new message, but timeout after 3 seconds so we can process
@@ -211,32 +212,55 @@ class Command(BaseCommand):
             if pid not in self.to_index:
                 # get content models from resource index
                 obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid, modelns.hasModel))
-                # includes generic content models
+
+                #UGLY temporary hack. . .
+                obj_cmodels.remove('info:fedora/fedora-system:FedoraObject-3.0')
                 
+                # includes generic content models
+
                 # check if the content models match one of the object types we are indexing
-                type = None
-                for cmodel, cls in self.index_types.iteritems():
-                    if cmodel in obj_cmodels:
-                        type = cls
+                for index_setting in self.index_settings:
+                    if index_setting.CMODEL_match_check(obj_cmodels):
+                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
                         break
+
+
+                #for cmodel, cls in self.index_types.iteritems():
+                    #if cmodel in obj_cmodels:
+                        #type = cls
+                        #break
                     
                     # store the pid, current time, and object type in list of items to be indexed
-                    if type:
-                        self.to_index[pid] = {'time': datetime.now(), 'type': type}
+                    #if type:
+                        #self.to_index[pid] = {'time': datetime.now(), 'type': type}
                         
         # check if there are any items that should be indexed now
         if self.to_index:
             indexed = []
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, go ahead and index
+                
+                #BUG: Will never index unless a second item is sent to be indexed . . .
                 if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
                     logger.info('triggering index for %s' % pid)
-                    obj = self.repo.get_object(pid, type=self.to_index[pid]['type'])
-                    try:
+                    response = urllib2.urlopen(self.to_index[pid]['app_url'] + pid)
+                    json_value = response.read()
+                    index_data = simplejson.loads(json_value)
+                    #try:
+                    solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
+                    print 'about to index: %s' % (index_data)
+                    solr_interface.add(index_data)
+                    solr_interface.commit()
+                    #except SolrError as se:
+                        #logger.error('Error indexing for %s: %s' % (pid, se))
+
+                        
+                    #obj = self.repo.get_object(pid, type=self.to_index[pid]['type'])
+                    #try:
                         # TODO: should this be a celery task?
-                        obj.index()
-                    except SolrError as se:
-                        logger.error('Error indexing for %s: %s' % (pid, se))
+                        #obj.index()
+                    #except SolrError as se:
+                        #logger.error('Error indexing for %s: %s' % (pid, se))
                         # possible errors: status 404 - solr not running/path incorrectly configured
                         # schema error prints nicely, 404 is ugly...
                         # TODO: also catch fedora errors
