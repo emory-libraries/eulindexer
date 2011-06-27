@@ -97,6 +97,8 @@ class Command(BaseCommand):
                     indexer_setting.CMODEL_list = item_value
                     logger.info('content model for %s is: %s' % (url, item_value))
 
+            indexer_setting.schema = urllib2.urlopen(indexer_setting.solr_url + 'admin/file/?file=schema.xml').read()
+
 
     def handle(self, *args, **options):
         # verbosity should be set by django BaseCommand standard options
@@ -132,7 +134,7 @@ class Command(BaseCommand):
         if verbosity > 1:
             self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
             for index_setting in self.index_settings:
-                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.list_CMODELS(), index_setting.solr_url, index_setting.app_url))
+                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.CMODEL_list, index_setting.solr_url, index_setting.app_url))
 
         while (True):
             # check if there is a new message, but timeout after 3 seconds so we can process
@@ -221,18 +223,9 @@ class Command(BaseCommand):
                 # check if the content models match one of the object types we are indexing
                 for index_setting in self.index_settings:
                     if index_setting.CMODEL_match_check(obj_cmodels):
-                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
+                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url, 'schema': index_setting.schema}
                         break
 
-
-                #for cmodel, cls in self.index_types.iteritems():
-                    #if cmodel in obj_cmodels:
-                        #type = cls
-                        #break
-                    
-                    # store the pid, current time, and object type in list of items to be indexed
-                    #if type:
-                        #self.to_index[pid] = {'time': datetime.now(), 'type': type}
                         
         # check if there are any items that should be indexed now
         if self.to_index:
@@ -241,29 +234,22 @@ class Command(BaseCommand):
                 # if we've waited the configured delay time, go ahead and index
                 
                 #BUG: Will never index unless a second item is sent to be indexed . . .
+                # TODO: should this be a celery task? Should schema be written to a file somewhere? Where?
+
                 if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
                     logger.info('triggering index for %s' % pid)
                     response = urllib2.urlopen(self.to_index[pid]['app_url'] + pid)
                     json_value = response.read()
                     index_data = simplejson.loads(json_value)
-                    #try:
-                    solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
-                    print 'about to index: %s' % (index_data)
-                    solr_interface.add(index_data)
-                    solr_interface.commit()
-                    #except SolrError as se:
-                        #logger.error('Error indexing for %s: %s' % (pid, se))
-
-                        
-                    #obj = self.repo.get_object(pid, type=self.to_index[pid]['type'])
-                    #try:
-                        # TODO: should this be a celery task?
-                        #obj.index()
-                    #except SolrError as se:
-                        #logger.error('Error indexing for %s: %s' % (pid, se))
+                    try:
+                        solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
+                        solr_interface.add(index_data)
+                        solr_interface.commit()
+                    except SolrError as se:
+                        logger.error('Error indexing for %s: %s' % (pid, se))\
                         # possible errors: status 404 - solr not running/path incorrectly configured
                         # schema error prints nicely, 404 is ugly...
-                        # TODO: also catch fedora errors
+
 
                     indexed.append(pid)
 

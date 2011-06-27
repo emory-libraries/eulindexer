@@ -18,27 +18,35 @@ class IndexerSettings(object):
     def __init__(self, app_url):
         self.app_url = app_url
         self.CMODEL_list = []
+        self.solr_url = ''
+        self.schema = ''
+
 
     def _set_solr_url(self, val):
-        print 'here'
         self.solr_url = val
 
-    def app_url(self):
-        return app_url
-
-    def solr_url(self):
+    def _get_solr_url(self):
         return solr_url
+
+    def _set_schema(self, val):
+        self.schema = val
+
+    def _get_schema(self):
+        self.schema = val
+
+    def _get_app_url(self):
+        return app_url
 
     def _set_CMODEL_list(self, val):
         self.CMODEL_list.append(val)
 
-    def list_CMODELS(self):
+    def _get_CMODEL_list(self):
         return self.CMODEL_list
 
     def CMODEL_match_check(self, list_of_cmodels):
         match_found = False
 
-        for clist in self.list_CMODELS():
+        for clist in self.CMODEL_list:
             match_found = True
             for cmodel in clist:
                 if not cmodel in list_of_cmodels:
