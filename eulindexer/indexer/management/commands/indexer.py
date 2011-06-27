@@ -223,39 +223,65 @@ class Command(BaseCommand):
                 # check if the content models match one of the object types we are indexing
                 for index_setting in self.index_settings:
                     if index_setting.CMODEL_match_check(obj_cmodels):
-                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url, 'schema': index_setting.schema}
+                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
                         break
 
                         
         # check if there are any items that should be indexed now
         if self.to_index:
+            logger.debug('objects to be indexed: %r' % self.to_index)
+
             indexed = []
             for pid in self.to_index.iterkeys():
-                # if we've waited the configured delay time, go ahead and index
-                
-                #BUG: Will never index unless a second item is sent to be indexed . . .
-                # TODO: should this be a celery task? Should schema be written to a file somewhere? Where?
-
-                if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
-                    logger.info('triggering index for %s' % pid)
-                    response = urllib2.urlopen(self.to_index[pid]['app_url'] + pid)
-                    json_value = response.read()
-                    index_data = simplejson.loads(json_value)
-                    try:
-                        solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
-                        solr_interface.add(index_data)
-                        solr_interface.commit()
-                    except SolrError as se:
-                        logger.error('Error indexing for %s: %s' % (pid, se))\
-                        # possible errors: status 404 - solr not running/path incorrectly configured
-                        # schema error prints nicely, 404 is ugly...
-
-
-                    indexed.append(pid)
+                try:
+                    was_indexed = self.process_index_item(pid)
+                    if(was_indexed):
+                        indexed.append(pid)
+                except Exception as e:
+                    logging.error("Failed to index %s for url %s with details: %s" % (pid, self.to_index[pid]['app_url'], e))
 
             # clear out any pids that were indexed from the list of objects still to be indexed
             for pid in indexed:
                 del self.to_index[pid]
 
-            logger.debug('objects to be indexed: %r' % self.to_index)
+    def process_index_item(self, pid):
+        '''Attempt to process an item in the index list. If this fails,
+        kick up an error to eventually handle so that processing does
+        not stop for other items.
+
+        :param pid - the pid of the object to index in the self.to_index queue.
+        '''
+
+        # if we've waited the configured delay time, go ahead and index
+        #TODO: Fixme BUG: Will never index unless a second item is sent to be indexed . . .
+        # TODO: should this be a celery task?
+        if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
+            logger.info('triggering index for %s' % pid)
+            try:
+                response = urllib2.urlopen(self.to_index[pid]['app_url'] + pid)
+                json_value = response.read()
+            except Exception as connectionError:
+                logger.error('Error connecting to %s for %s: %s' % (self.to_index[pid]['app_url'],pid, connectionError))
+                raise
+
+
+            index_data = simplejson.loads(json_value)
+            try:
+                #TODO: Add caching to the solr schema
+                solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
+                solr_interface.add(index_data)
+                #TODO: Pool updates of similar content items to reduce commits?
+                solr_interface.commit()
+            except SolrError as se:
+                logger.error('Error indexing for %s: %s' % (pid, se))
+                raise
+                # possible errors: status 404 - solr not running/path incorrectly configured
+                # schema error prints nicely, 404 is ugly...
+
+            #Return that item was indeed processed.
+            return True
+
+        #Item not processed due to time likely, return false.
+        else:
+            return False
             
