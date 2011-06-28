@@ -142,7 +142,7 @@ class test_indexer_settings(TestCase):
         except urllib2.HTTPError:
             urllib2_error_thrown=True
 
-        self.assertEqual(urllib2_error_thrown, True)
+        self.assertTrue(urllib2_error_thrown)
 
 
         #Mock out the calls for data from the application.
@@ -150,7 +150,6 @@ class test_indexer_settings(TestCase):
         application_returned_values.append('{"SOLR_URL": "", "CONTENT_MODELS": []}')
         application_returned_values.append('{"SOLR_URL": "http://localhost:9999/somevalue/", "CONTENT_MODELS": [["info:fedora/DOESNOTEXIST:Collection-1.1"]]}')
         application_returned_values.append('{"SOLR_URL": "http://localhost:8983/", "CONTENT_MODELS": [["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]]}')
-
 
         def mock_side_effect():
             return application_returned_values.pop()
@@ -180,7 +179,7 @@ class test_indexer_settings(TestCase):
             self.assertEqual(self.command.index_settings[2].app_url, settings.APPLICATION_URLS[2])
 
 
-        def test_IndexerSettings(TestCase):
+        def test_IndexerSettings(self):
 
             #Setup some known settings values
             settings.APPLICATION_URLS = ['http://localhost:0001']
@@ -198,7 +197,22 @@ class test_indexer_settings(TestCase):
             indexer_setting.solr_url = 'localhost'
             self.assertEqual(indexer_setting.solr_url, 'localhost')
 
-    class test_indexer_settings(TestCase):
+        def test_cmodel_comparison(self):
+            #Setup an indexer setting
+            indexer_setting = IndexerSettings('http://localhost:0001')
+            indexer_setting.CMODEL_list = ["info:fedora/emory-control:EuterpeAudio-1.0"]
+            indexer_setting.CMODEL_list = ["info:fedora/emory-control:Collection-1.1"]
+            indexer_setting.CMODEL_list = ["info:fedora/emory-control:SomeOtherValue-1.1"]
+
+            #Check for 1 value match
+            self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1"]'))
+            self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST-1.1"]'))
+
+            #Check for 2 value match
+            self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
+            self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
+
+
 
 
 
