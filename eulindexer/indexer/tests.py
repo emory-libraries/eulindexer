@@ -203,9 +203,9 @@ class IndexerSettingsTest(TestCase):
         indexer_setting.CMODEL_list = ["info:fedora/emory-control:SomeOtherValue-1.1"]
         
         #Check for 1 value match
-        self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1"]'))
+        self.assertTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1"]'))
         self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST-1.1"]'))
         
         #Check for 2 value match
-        self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
+        self.assertTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
         self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
