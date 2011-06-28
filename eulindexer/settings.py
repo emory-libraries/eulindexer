@@ -1,39 +1,34 @@
 from os import path
 
-DATABASES = {
-    #default database - none currently, so just a generic sqlite nodb.
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': 'nodb.db',
-        'USER': '',
-        'PASSWORD': '',
-        'HOST': '',
-        'PORT': '',
-    },
-}
-
 # Get the directory of this file for relative dir paths.
 # Django sets too many absolute paths.
 BASE_DIR = path.dirname(path.abspath(__file__))
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
-    'django.template.loaders.filesystem.load_template_source',
-#    'django.template.loaders.app_directories.load_template_source',
+    'django.template.loaders.filesystem.Loader',
+    'django.template.loaders.app_directories.Loader',
 #    'django.template.loaders.eggs.load_template_source',
 )
 
 TEMPLATE_CONTEXT_PROCESSORS = (
     'django.core.context_processors.media',
+    'django.contrib.auth.context_processors.auth',
 )
+
+ROOT_URLCONF = 'eulindexer.urls'
 
 MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
-#    'django.contrib.sessions.middleware.SessionMiddleware',
-#    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
 )
 
 INSTALLED_APPS = (
+    'django.contrib.auth',
+    'django.contrib.admin',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
     'eulfedora',
     'eulindexer.indexer',
 )

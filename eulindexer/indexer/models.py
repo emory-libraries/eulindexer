@@ -16,9 +16,23 @@
 
 import logging
 import urllib2
+
+from django.db import models
 from django.utils import simplejson
 
 logger = logging.getLogger(__name__)
+
+class IndexError(models.Model):
+    'Database model for tracking errors when the indexer fails to process an item.'
+    site = models.CharField(max_length=100) 
+    object_id = models.CharField(max_length=255)
+    time = models.DateTimeField(auto_now=True)
+    note = models.CharField(max_length=255)  # any error message text or extra info
+    # retry count?
+
+    def __unicode__(self):
+        return '%s (%s) %s' % (self.object_id, self.site, self.time)
+
 
 class IndexerSettings(object):
     def __init__(self, site_url):
