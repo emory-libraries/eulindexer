@@ -84,7 +84,7 @@ class Command(BaseCommand):
     def init_cmodel_settings(self, *args, **options):
         self.index_settings = []
 
-        for url in settings.APPLICATION_URLS:
+        for url in settings.INDEXER_SITE_URLS:
             indexer_setting = IndexerSettings(url)
             self.index_settings.append(indexer_setting)
             response = urllib2.urlopen(url)

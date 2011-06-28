@@ -40,11 +40,15 @@ class IndexerTest(TestCase):
 
     def setUp(self):
         self.command = indexer.Command()
-        # settings? options? 
-        self.old_settings_APPLICATION_URLS = settings.APPLICATION_URLS
+        # store real configuration for sites to be indexed
+        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
 
     def tearDown(self):
-        settings.APPLICATION_URLS = self.old_settings_APPLICATION_URLS
+        # restore index site configuration
+        if self._INDEXER_SITE_URLS is None:
+            delattr(settings, 'INDEXER_SITE_URLS')
+        else:
+            settings.INDEXER_SITE_URLS = self._INDEXER_SITE_URLS
 
     def test_startup_error(self):
         # simulate a socket error (fedora not running/configured properly)
@@ -94,7 +98,11 @@ class IndexerTest(TestCase):
 
     def test_init_cmodel_settings(self):
         #Setup some known settings values
-        settings.APPLICATION_URLS = ['http://localhost:0001', 'http://localhost:0002', 'http://localhost:0003']
+        settings.INDEXER_SITE_URLS = {
+            'site1': 'http://localhost:0001', 
+            'site2': 'http://localhost:0002', 
+            'site3': 'http://localhost:0003'
+        }
 
         #Try to connect to an unavailable server. Not ideal handling currently. Just verifying app will throw an error
         #and not start until the unreachable host is up. Should likely be handled some other way eventually.
@@ -128,17 +136,17 @@ class IndexerTest(TestCase):
             #Check the first responses settings
             self.assertEqual(self.command.index_settings[0].solr_url, 'http://localhost:8983/')
             self.assertEqual(self.command.index_settings[0].CMODEL_list, [['info:fedora/emory-control:Collection-1.1'], ['info:fedora/emory-control:EuterpeAudio-1.0']])
-            self.assertEqual(self.command.index_settings[0].app_url, settings.APPLICATION_URLS[0])
+            self.assertEqual(self.command.index_settings[0].app_url, settings.INDEXER_SITE_URLS['site1'])
 
             #Check the second respose settings
             self.assertEqual(self.command.index_settings[1].solr_url, 'http://localhost:9999/somevalue/')
             self.assertEqual(self.command.index_settings[1].CMODEL_list, [['info:fedora/DOESNOTEXIST:Collection-1.1']])
-            self.assertEqual(self.command.index_settings[1].app_url, settings.APPLICATION_URLS[1])
+            self.assertEqual(self.command.index_settings[1].app_url, settings.INDEXER_SITE_URLS['site2'])
 
             #Check the third (empty) response settings
             self.assertEqual(self.command.index_settings[2].solr_url, '')
             self.assertEqual(str(self.command.index_settings[2].CMODEL_list), "[]")
-            self.assertEqual(self.command.index_settings[2].app_url, settings.APPLICATION_URLS[2])
+            self.assertEqual(self.command.index_settings[2].app_url, settings.INDEXER_SITE_URLS[2])
 
 
 

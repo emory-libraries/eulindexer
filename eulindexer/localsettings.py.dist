@@ -23,7 +23,13 @@ TIME_ZONE = 'America/New_York'
 # http://www.i18nguy.com/unicode/language-identifiers.html
 LANGUAGE_CODE = 'en-us'
 
-APPLICATION_URLS=['http://localhost:8000/indexdata/']
+# Configure the websites that should be indexed by this indexer.
+# - key should be a short-hand project name (used for error reporting, etc.)
+# - value should be the url for the indexdata service to query for
+#   index configuration & index data
+INDEXER_SITE_URLS = {
+    'project-nickname': 'http://example.host.name/indexdata/',
+}
 
 # Needed for some tests - should this be mocked out?
 FEDORA_ROOT='http://localhost:8080/fedora/'
