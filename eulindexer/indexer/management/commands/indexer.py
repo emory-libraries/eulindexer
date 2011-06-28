@@ -38,6 +38,12 @@ from eulindexer.indexer.models import IndexerSettings
 
 logger = logging.getLogger(__name__)
 
+hdlr = logging.FileHandler('myapp.log')
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+hdlr.setFormatter(formatter)
+logger.addHandler(hdlr)
+logger.setLevel(logging.DEBUG)
+
 class Command(BaseCommand):
 
     to_index = {}
@@ -83,11 +89,14 @@ class Command(BaseCommand):
 
     def init_cmodel_settings(self, *args, **options):
         self.index_settings = []
+
         for url in settings.APPLICATION_URLS:
             indexer_setting = IndexerSettings(url)
             self.index_settings.append(indexer_setting)
             response = urllib2.urlopen(url)
+            logger.info(response)
             json_value = response.read()
+
             parsed_json = simplejson.loads(json_value)
             for item, item_value in parsed_json.iteritems():
                 if(item == 'SOLR_URL'):
@@ -96,8 +105,6 @@ class Command(BaseCommand):
                 if(item == 'CONTENT_MODELS'):
                     indexer_setting.CMODEL_list = item_value
                     logger.info('content model for %s is: %s' % (url, item_value))
-
-            indexer_setting.schema = urllib2.urlopen(indexer_setting.solr_url + 'admin/file/?file=schema.xml').read()
 
 
     def handle(self, *args, **options):
@@ -257,7 +264,6 @@ class Command(BaseCommand):
         '''
 
         # if we've waited the configured delay time, go ahead and index
-        #TODO: Fixme BUG: Will never index unless a second item is sent to be indexed . . .
         # TODO: should this be a celery task?
         if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
             logger.info('triggering index for %s' % pid)
