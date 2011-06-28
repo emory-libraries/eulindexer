@@ -16,10 +16,11 @@
 
 
 from mock import Mock, patch, DEFAULT
+from os import path
 from socket import error as socket_error
 from stompest.simple import Stomp
 from stompest.error import StompFrameError
-from os import path
+import urllib2
 
 from django.conf import settings
 from django.core.management.base import CommandError
@@ -30,16 +31,20 @@ from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
+from eulindexer.indexer.models import IndexerSettings
 
-import urllib2
 
 class IndexerTest(TestCase):
+    '''Unit tests for the indexer manage command.'''
+    # test the indexer command and its methods here
+
     def setUp(self):
         self.command = indexer.Command()
         # settings? options? 
-        
+        self.old_settings_APPLICATION_URLS = settings.APPLICATION_URLS
+
     def tearDown(self):
-        pass
+        settings.APPLICATION_URLS = self.old_settings_APPLICATION_URLS
 
     def test_startup_error(self):
         # simulate a socket error (fedora not running/configured properly)
@@ -86,49 +91,6 @@ class IndexerTest(TestCase):
             self.command.reconnect_listener()
             # listener.connect should be called twice - failure, then success
             self.assertEqual(2, mocklistener.connect.call_count)
-
-
-class TestPdfObject(DigitalObject):
-    pdf = FileDatastream("PDF", "PDF document", defaults={
-        	'versionable': False, 'mimetype': 'application/pdf'
-        })
-
-
-class PdfToTextTest(TestCase):
-    fixture_dir = path.join(path.dirname(path.abspath(__file__)), 'fixtures')
-    pdf_filepath = path.join(fixture_dir, 'test.pdf')
-    pdf_text = 'This is a short PDF document to use for testing.'
-
-    def setUp(self):
-        self.repo = Repository(settings.FEDORA_TEST_ROOT, settings.FEDORA_TEST_USER,
-                               settings.FEDORA_TEST_PASSWORD)
-        with open(self.pdf_filepath) as pdf:
-            self.pdfobj = self.repo.get_object(type=TestPdfObject)
-            self.pdfobj.label = 'eulindexer test pdf object'
-            self.pdfobj.pdf.content = pdf
-            self.pdfobj.save()
-
-    def tearDown(self):
-        self.repo.purge_object(self.pdfobj.pid)
-        
-    def test_file(self):
-        # extract text from a pdf from a file on the local filesystem
-        text = pdf_to_text(open(self.pdf_filepath, 'rb'))
-        self.assertEqual(self.pdf_text, text)
-
-    def test_object_datastream(self):
-        # extract text from a pdf datastream in fedora
-        pdfobj = self.repo.get_object(self.pdfobj.pid, type=TestPdfObject)
-        text = pdf_to_text(pdfobj.pdf.content)
-        self.assertEqual(self.pdf_text, text)
-
-class test_indexer_settings(TestCase):
-    def setUp(self):
-        self.command = indexer.Command()
-        self.old_settings_APPLICATION_URLS = settings.APPLICATION_URLS
-
-    def tearDown(self):
-        settings.APPLICATION_URLS = self.old_settings_APPLICATION_URLS
 
     def test_init_cmodel_settings(self):
         #Setup some known settings values
@@ -179,45 +141,71 @@ class test_indexer_settings(TestCase):
             self.assertEqual(self.command.index_settings[2].app_url, settings.APPLICATION_URLS[2])
 
 
-        def test_IndexerSettings(self):
 
-            #Setup some known settings values
-            settings.APPLICATION_URLS = ['http://localhost:0001']
-
-            #Test setting Application URL
-            indexer_setting = IndexerSettings(settings.APPLICATION_URLS[0])
-            self.assertEqual(indexer_setting.app_url, settings.APPLICATION_URLS[0])
-
-            #Test setting some CMODELS
-            indexer_setting.CMODEL_list = ["info:fedora/emory-control:Collection-1.1"]
-            indexer_setting.CMODEL_list = ["info:fedora/emory-control:EuterpeAudio-1.0"]
-            self.assertEqual(indexer_setting.CMODEL_list, "[['info:fedora/emory-control:Collection-1.1'], ['info:fedora/emory-control:EuterpeAudio-1.0']]")
-
-            #Test setting Solr URL
-            indexer_setting.solr_url = 'localhost'
-            self.assertEqual(indexer_setting.solr_url, 'localhost')
-
-        def test_cmodel_comparison(self):
-            #Setup an indexer setting
-            indexer_setting = IndexerSettings('http://localhost:0001')
-            indexer_setting.CMODEL_list = ["info:fedora/emory-control:EuterpeAudio-1.0"]
-            indexer_setting.CMODEL_list = ["info:fedora/emory-control:Collection-1.1"]
-            indexer_setting.CMODEL_list = ["info:fedora/emory-control:SomeOtherValue-1.1"]
-
-            #Check for 1 value match
-            self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1"]'))
-            self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST-1.1"]'))
-
-            #Check for 2 value match
-            self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
-            self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
+class TestPdfObject(DigitalObject):
+    pdf = FileDatastream("PDF", "PDF document", defaults={
+        	'versionable': False, 'mimetype': 'application/pdf'
+        })
 
 
+class PdfToTextTest(TestCase):
+    fixture_dir = path.join(path.dirname(path.abspath(__file__)), 'fixtures')
+    pdf_filepath = path.join(fixture_dir, 'test.pdf')
+    pdf_text = 'This is a short PDF document to use for testing.'
 
+    def setUp(self):
+        self.repo = Repository(settings.FEDORA_TEST_ROOT, settings.FEDORA_TEST_USER,
+                               settings.FEDORA_TEST_PASSWORD)
+        with open(self.pdf_filepath) as pdf:
+            self.pdfobj = self.repo.get_object(type=TestPdfObject)
+            self.pdfobj.label = 'eulindexer test pdf object'
+            self.pdfobj.pdf.content = pdf
+            self.pdfobj.save()
 
-
-
-
-
-
+    def tearDown(self):
+        self.repo.purge_object(self.pdfobj.pid)
         
+    def test_file(self):
+        # extract text from a pdf from a file on the local filesystem
+        text = pdf_to_text(open(self.pdf_filepath, 'rb'))
+        self.assertEqual(self.pdf_text, text)
+
+    def test_object_datastream(self):
+        # extract text from a pdf datastream in fedora
+        pdfobj = self.repo.get_object(self.pdfobj.pid, type=TestPdfObject)
+        text = pdf_to_text(pdfobj.pdf.content)
+        self.assertEqual(self.pdf_text, text)
+
+class IndexerSettingsTest(TestCase):
+
+    def test_init(self):
+        app_url = 'http://localhost:0001'
+
+        # Test setting Application URL
+        indexer_setting = IndexerSettings(app_url)
+        self.assertEqual(app_url, indexer_setting.app_url)
+
+        # Test setting some CMODELS
+        indexer_setting.CMODEL_list = ["info:fedora/emory-control:Collection-1.1"]
+        indexer_setting.CMODEL_list = ["info:fedora/emory-control:EuterpeAudio-1.0"]
+        self.assertEqual(indexer_setting.CMODEL_list, "[['info:fedora/emory-control:Collection-1.1'], ['info:fedora/emory-control:EuterpeAudio-1.0']]")
+
+        #Test setting Solr URL
+        solr_url = 'localhost'
+        indexer_setting.solr_url = solr_url
+        self.assertEqual(solr_url, indexer_setting.solr_url)
+
+    def test_cmodel_comparison(self):
+        # Setup an indexer setting
+        indexer_setting = IndexerSettings('http://localhost:0001')
+        indexer_setting.CMODEL_list = ["info:fedora/emory-control:EuterpeAudio-1.0"]
+        indexer_setting.CMODEL_list = ["info:fedora/emory-control:Collection-1.1"]
+        indexer_setting.CMODEL_list = ["info:fedora/emory-control:SomeOtherValue-1.1"]
+        
+        #Check for 1 value match
+        self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1"]'))
+        self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST-1.1"]'))
+        
+        #Check for 2 value match
+        self.asserTrue(indexer_setting.CMODEL_match_check('["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
+        self.asserFalse(indexer_setting.CMODEL_match_check('["DOESNOTEXIST", "info:fedora/emory-control:SomeOtherValue-1.1"]'))
