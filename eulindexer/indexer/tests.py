@@ -146,7 +146,7 @@ class IndexerTest(TestCase):
             #Check the third (empty) response settings
             self.assertEqual(self.command.index_settings[2].solr_url, '')
             self.assertEqual(str(self.command.index_settings[2].CMODEL_list), "[]")
-            self.assertEqual(self.command.index_settings[2].app_url, settings.INDEXER_SITE_URLS[2])
+            self.assertEqual(self.command.index_settings[2].app_url, settings.INDEXER_SITE_URLS['site3'])
 
 
 
