@@ -104,49 +104,29 @@ class IndexerTest(TestCase):
             'site3': 'http://localhost:0003'
         }
 
-        #Try to connect to an unavailable server. Not ideal handling currently. Just verifying app will throw an error
-        #and not start until the unreachable host is up. Should likely be handled some other way eventually.
-        urllib2_error_thrown = False
-        try:
-            self.command.init_cmodel_settings()
-        except urllib2.HTTPError:
-            urllib2_error_thrown=True
+        # Try to connect to an unavailable server. Not ideal handling
+        # currently. Just verifying app will throw an error and not
+        # start until the unreachable host is up. Should likely be
+        # handled some other way eventually.
+        self.assertRaises(urllib2.HTTPError, self.command.init_cmodel_settings)
 
-        self.assertTrue(urllib2_error_thrown)
-
-
-        #Mock out the calls for data from the application.
-        application_returned_values = []
-        application_returned_values.append('{"SOLR_URL": "", "CONTENT_MODELS": []}')
-        application_returned_values.append('{"SOLR_URL": "http://localhost:9999/somevalue/", "CONTENT_MODELS": [["info:fedora/DOESNOTEXIST:Collection-1.1"]]}')
-        application_returned_values.append('{"SOLR_URL": "http://localhost:8983/", "CONTENT_MODELS": [["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]]}')
-
-        def mock_side_effect():
-            return application_returned_values.pop()
-
-        mockreader = Mock()
-        mockreader.read.side_effect = mock_side_effect
+        # Mock urllib calls - no data for now
         mockurllib = Mock(urllib2)
-        mockurllib.urlopen.return_value = mockreader
+        mockurllib.urlopen.return_value.read.return_value = '{}'
 
-        #Verify settings are set correctly.
-        with patch('eulindexer.indexer.management.commands.indexer.urllib2',
+        # Verify index settings are loaded
+        with patch('eulindexer.indexer.models.urllib2',
                    new=mockurllib):
             self.command.init_cmodel_settings()
-            #Check the first responses settings
-            self.assertEqual(self.command.index_settings[0].solr_url, 'http://localhost:8983/')
-            self.assertEqual(self.command.index_settings[0].CMODEL_list, [['info:fedora/emory-control:Collection-1.1'], ['info:fedora/emory-control:EuterpeAudio-1.0']])
-            self.assertEqual(self.command.index_settings[0].app_url, settings.INDEXER_SITE_URLS['site1'])
+            self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
+                             len(self.command.index_settings.keys()),
+                             'indexer should initialize one index setting per configured indexer site')
 
-            #Check the second respose settings
-            self.assertEqual(self.command.index_settings[1].solr_url, 'http://localhost:9999/somevalue/')
-            self.assertEqual(self.command.index_settings[1].CMODEL_list, [['info:fedora/DOESNOTEXIST:Collection-1.1']])
-            self.assertEqual(self.command.index_settings[1].app_url, settings.INDEXER_SITE_URLS['site2'])
-
-            #Check the third (empty) response settings
-            self.assertEqual(self.command.index_settings[2].solr_url, '')
-            self.assertEqual(str(self.command.index_settings[2].CMODEL_list), "[]")
-            self.assertEqual(self.command.index_settings[2].app_url, settings.INDEXER_SITE_URLS['site3'])
+            # check that site urls match - actual index configuration
+            # loading is handled in index settings object
+            self.assertEqual(self.command.index_settings['site1'].site_url, settings.INDEXER_SITE_URLS['site1'])
+            self.assertEqual(self.command.index_settings['site2'].site_url, settings.INDEXER_SITE_URLS['site2'])
+            self.assertEqual(self.command.index_settings['site3'].site_url, settings.INDEXER_SITE_URLS['site3'])
 
 
 
@@ -187,25 +167,44 @@ class PdfToTextTest(TestCase):
 class IndexerSettingsTest(TestCase):
 
     def test_init(self):
-        app_url = 'http://localhost:0001'
+        # Test init & load configuration
+        site_url = 'http://localhost:0001'
 
-        # Test setting Application URL
-        indexer_setting = IndexerSettings(app_url)
-        self.assertEqual(app_url, indexer_setting.app_url)
+        # mock urrlib to return json index config data
+        mockurllib = Mock(urllib2)
+        # empty response
+        mockurllib.urlopen.return_value.read.return_value = '{}'
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            indexer_setting = IndexerSettings(site_url)
+            self.assertEqual(site_url, indexer_setting.site_url)
+            self.assertEqual('', indexer_setting.solr_url)
+            self.assertEqual([], indexer_setting.CMODEL_list)
 
-        # Test setting some CMODELS
-        indexer_setting.CMODEL_list = [["info:fedora/emory-control:Collection-1.1"],["info:fedora/emory-control:EuterpeAudio-1.0"]]
-        self.assertEqual(indexer_setting.CMODEL_list, [['info:fedora/emory-control:Collection-1.1'], ['info:fedora/emory-control:EuterpeAudio-1.0']])
+        # fields but no values
+        mockurllib.urlopen.return_value.read.return_value = '{"SOLR_URL": "", "CONTENT_MODELS": []}'
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            indexer_setting = IndexerSettings(site_url)
+            self.assertEqual(site_url, indexer_setting.site_url)
+            self.assertEqual('', indexer_setting.solr_url)
+            self.assertEqual([], indexer_setting.CMODEL_list)
 
-        #Test setting Solr URL
-        solr_url = 'localhost'
-        indexer_setting.solr_url = solr_url
-        self.assertEqual(solr_url, indexer_setting.solr_url)
+        # fields and values
+        mockurllib.urlopen.return_value.read.return_value = '{"SOLR_URL": "http://localhost:8983/", "CONTENT_MODELS": [["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]]}'
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            indexer_setting = IndexerSettings(site_url)
+            self.assertEqual(site_url, indexer_setting.site_url)
+            self.assertEqual('http://localhost:8983/', indexer_setting.solr_url)
+            self.assertEqual([["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]], indexer_setting.CMODEL_list)
+
 
     def test_cmodel_comparison(self):
         # Setup an indexer setting
-        indexer_setting = IndexerSettings('http://localhost:0001')
-        indexer_setting.CMODEL_list = [["info:fedora/emory-control:Collection-1.1"],["info:fedora/emory-control:EuterpeAudio-1.0"],["info:fedora/emory-control:SomeOtherValue-1.1"]]
+        mockurllib = Mock(urllib2)
+        # empty response
+        mockurllib.urlopen.return_value.read.return_value = '{}'
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            indexer_setting = IndexerSettings('http://localhost:0001')
+            indexer_setting.CMODEL_list = [["info:fedora/emory-control:Collection-1.1"],["info:fedora/emory-control:EuterpeAudio-1.0"],["info:fedora/emory-control:SomeOtherValue-1.1"]]
         
         #Check for 1 value match
         #self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1"]))

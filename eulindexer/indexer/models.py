@@ -14,18 +14,35 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import logging
+import urllib2
+from django.utils import simplejson
+
+logger = logging.getLogger(__name__)
+
 class IndexerSettings(object):
-    def __init__(self, app_url):
-        self.app_url = app_url
+    def __init__(self, site_url):
+        self.site_url = site_url
         self.CMODEL_list = []
         self.solr_url = ''
+        self.load_configuration()
 
+    def load_configuration(self):
+        # load the index configuration from the specified site url
+        response = urllib2.urlopen(self.site_url)
+        index_config = simplejson.loads(response.read())
+        logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
+        
+        if 'SOLR_URL' in index_config:
+            self.solr_url = index_config['SOLR_URL']
+        
+        if 'CONTENT_MODELS' in index_config:
+            self.CMODEL_list = index_config['CONTENT_MODELS']
 
-    def _set_CMODEL_list(self, val):
-        self.CMODEL_list.append(val)
+        # FIXME: is it an error if either/both of these are not present?
 
-    def _get_CMODEL_list(self):
-        return self.CMODEL_list
+        logger.info('Loaded index configuration for %s:\n\tSOLR url:\t%s\n\tContent Models:\t%s' % \
+                        (self.site_url, self.solr_url, self.CMODEL_list))
 
     def CMODEL_match_check(self, list_of_cmodels):
         match_found = False

@@ -82,22 +82,9 @@ class Command(BaseCommand):
         self.listener.subscribe('/topic/fedora.apim.update', {'ack': 'client'})  #  can we use auto-ack ?
 
     def init_cmodel_settings(self, *args, **options):
-        self.index_settings = []
-
+        self.index_settings = {}
         for site, url in settings.INDEXER_SITE_URLS.iteritems():
-            indexer_setting = IndexerSettings(url)
-            self.index_settings.append(indexer_setting)
-            response = urllib2.urlopen(url)
-            logger.info(response)
-            json_value = response.read()
-            parsed_json = simplejson.loads(json_value)
-            for item, item_value in parsed_json.iteritems():
-                if(item == 'SOLR_URL'):
-                    indexer_setting.solr_url = item_value
-                    logger.info('SOLR URL for %s is: %s' % (url, item_value))
-                if(item == 'CONTENT_MODELS'):
-                    indexer_setting.CMODEL_list = item_value
-                    logger.info('content model for %s is: %s' % (url, item_value))
+            self.index_settings[site] = IndexerSettings(url)
 
 
     def handle(self, *args, **options):
@@ -133,7 +120,8 @@ class Command(BaseCommand):
 
         if verbosity > 1:
             self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
-            for index_setting in self.index_settings:
+            for site, index_setting in self.index_settings.iteritems():
+                # TODO: include site name in output?
                 self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.CMODEL_list, index_setting.solr_url, index_setting.app_url))
 
         while (True):
@@ -224,8 +212,9 @@ class Command(BaseCommand):
                 # includes generic content models
 
                 # check if the content models match one of the object types we are indexing
-                for index_setting in self.index_settings:
+                for site, index_setting in self.index_settings.iteritems():
                     if index_setting.CMODEL_match_check(obj_cmodels):
+                        # TODO: reference site instead of app/solr url (access all via index settings)
                         self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
                         break
 
