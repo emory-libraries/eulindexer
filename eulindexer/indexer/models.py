@@ -21,15 +21,6 @@ class IndexerSettings(object):
         self.solr_url = ''
 
 
-    def _set_solr_url(self, val):
-        self.solr_url = val
-
-    def _get_solr_url(self):
-        return solr_url
-
-    def _get_app_url(self):
-        return app_url
-
     def _set_CMODEL_list(self, val):
         self.CMODEL_list.append(val)
 
