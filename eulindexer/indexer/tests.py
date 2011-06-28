@@ -134,8 +134,15 @@ class test_indexer_settings(TestCase):
         #Setup some known settings values
         settings.APPLICATION_URLS = ['http://localhost:0001', 'http://localhost:0002', 'http://localhost:0003']
 
-        #Try to connect to an unavailable server. Currently still trying to get this to catch the error.
-        #self.assertRaises(urllib2.HTTPError, self.command.init_cmodel_settings())
+        #Try to connect to an unavailable server. Not ideal handling currently. Just verifying app will throw an error
+        #and not start until the unreachable host is up. Should likely be handled some other way eventually.
+        urllib2_error_thrown = False
+        try:
+            self.command.init_cmodel_settings()
+        except urllib2.HTTPError:
+            urllib2_error_thrown=True
+
+        self.assertEqual(urllib2_error_thrown, True)
 
 
         #Mock out the calls for data from the application.
@@ -190,6 +197,9 @@ class test_indexer_settings(TestCase):
             #Test setting Solr URL
             indexer_setting.solr_url = 'localhost'
             self.assertEqual(indexer_setting.solr_url, 'localhost')
+
+    class test_indexer_settings(TestCase):
+
 
 
 
