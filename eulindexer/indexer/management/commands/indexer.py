@@ -34,7 +34,7 @@ from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
 from django.utils import simplejson
-from eulindexer.indexer.models import IndexerSettings
+from eulindexer.indexer.models import IndexerSettings, IndexError
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ class Command(BaseCommand):
             self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
             for site, index_setting in self.index_settings.iteritems():
                 # TODO: include site name in output?
-                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.CMODEL_list, index_setting.solr_url, index_setting.app_url))
+                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.CMODEL_list, index_setting.solr_url, index_setting.site_url))
 
         while (True):
             # check if there is a new message, but timeout after 3 seconds so we can process
@@ -214,8 +214,7 @@ class Command(BaseCommand):
                 # check if the content models match one of the object types we are indexing
                 for site, index_setting in self.index_settings.iteritems():
                     if index_setting.CMODEL_match_check(obj_cmodels):
-                        # TODO: reference site instead of app/solr url (access all via index settings)
-                        self.to_index[pid] = {'time': datetime.now(), 'app_url': index_setting.app_url, 'solr_url': index_setting.solr_url}
+                        self.to_index[pid] = {'time': datetime.now(), 'site': site}
                         break
 
     def process_index_queue(self):
@@ -230,7 +229,17 @@ class Command(BaseCommand):
                     if(was_indexed):
                         indexed.append(pid)
                 except Exception as e:
-                    logging.error("Failed to index %s for url %s with details: %s" % (pid, self.to_index[pid]['app_url'], e))
+                    logging.error("Failed to index %s (%s): %s" % \
+                                      (pid, self.to_index[pid]['site'], e))
+                    err = IndexError(object_id=pid, site=self.to_index[pid]['site'],
+                                     detail='%s: %s' % (e.__class__, e))
+                    # TODO: clean up detail error message based on type of exception
+                    err.save()
+
+                    # FIXME: for now, bypass retry logic 
+                    # (conflicts with indexerror db logging; no stop condition)
+                    indexed.append(pid)
+
 
             # clear out any pids that were indexed from the list of objects still to be indexed
             for pid in indexed:
@@ -248,21 +257,27 @@ class Command(BaseCommand):
         # if we've waited the configured delay time, go ahead and index
         # TODO: should this be a celery task?
         if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
-            logger.info('triggering index for %s' % pid)
+            logger.info('Triggering index for %s' % pid)	# debug maybe?
+            index_config = self.index_settings[self.to_index[pid]['site']]
+            indexdata_url = index_config.site_url + pid
+            logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
             try:
-                response = urllib2.urlopen(self.to_index[pid]['app_url'] + pid)
+                # FIXME: depends on trailing slash
+                response = urllib2.urlopen(indexdata_url)
                 json_value = response.read()
             except Exception as connectionError:
-                logger.error('Error connecting to %s for %s: %s' % (self.to_index[pid]['app_url'],pid, connectionError))
+                logger.error('Error connecting to %s for %s: %s' % \
+                                 (indexdata_url, pid, connectionError))
                 raise
 
-
+            # FIXME: catch json parse error?
             index_data = simplejson.loads(json_value)
             try:
-                #TODO: Add caching to the solr schema
-                solr_interface = sunburnt.SolrInterface(self.to_index[pid]['solr_url'], self.to_index[pid]['solr_url'] + 'admin/file/?file=schema.xml')
+                # FIXME: init solr connection at index config load time?
+                solr_interface = sunburnt.SolrInterface(index_config.solr_url)
                 solr_interface.add(index_data)
                 #TODO: Pool updates of similar content items to reduce commits?
+                # or, better - configure solr to handle according to application needs
                 solr_interface.commit()
             except SolrError as se:
                 logger.error('Error indexing for %s: %s' % (pid, se))

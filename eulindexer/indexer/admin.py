@@ -19,10 +19,12 @@ from eulindexer.indexer.models import IndexError
 
 class IndexErrorAdmin(admin.ModelAdmin):
     date_hierarchy = 'time'
-    list_display = ('object_id', 'site', 'time', 'note')
+    list_display = ('object_id', 'site', 'time', 'detail')
     list_filter = ('site',)
-    # only allow the the note field to be modified via admin site
+    # only allow the the note/details field to be modified via admin site
     readonly_fields = ('object_id', 'site')
+
+    # TODO: details field should probably have a textarea widget
 
     # disallow adding index errors via admin site
     def has_add_permission(self, request):

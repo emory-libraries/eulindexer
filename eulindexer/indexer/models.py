@@ -27,7 +27,8 @@ class IndexError(models.Model):
     site = models.CharField(max_length=100) 
     object_id = models.CharField(max_length=255)
     time = models.DateTimeField(auto_now=True)
-    note = models.CharField(max_length=255)  # any error message text or extra info
+    detail = models.CharField(max_length=255, 
+                              help_text='Any error message text or details about the error')
     # retry count?
 
     def __unicode__(self):
@@ -57,6 +58,7 @@ class IndexerSettings(object):
 
         logger.info('Loaded index configuration for %s:\n\tSOLR url:\t%s\n\tContent Models:\t%s' % \
                         (self.site_url, self.solr_url, self.CMODEL_list))
+        # TODO: print cmodel lists in a more readable format...
 
     def CMODEL_match_check(self, list_of_cmodels):
         match_found = False
