@@ -38,12 +38,6 @@ from eulindexer.indexer.models import IndexerSettings
 
 logger = logging.getLogger(__name__)
 
-hdlr = logging.FileHandler('myapp.log')
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-hdlr.setFormatter(formatter)
-logger.addHandler(hdlr)
-logger.setLevel(logging.DEBUG)
-
 class Command(BaseCommand):
 
     to_index = {}
@@ -96,7 +90,6 @@ class Command(BaseCommand):
             response = urllib2.urlopen(url)
             logger.info(response)
             json_value = response.read()
-
             parsed_json = simplejson.loads(json_value)
             for item, item_value in parsed_json.iteritems():
                 if(item == 'SOLR_URL'):
