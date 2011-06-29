@@ -28,8 +28,8 @@ class IndexError(models.Model):
     object_id = models.CharField(max_length=255)
     time = models.DateTimeField(auto_now=True)
     detail = models.CharField(max_length=255, 
-                              help_text='Any error message text or details about the error')
-    # retry count?
+        help_text='Error message or any other details about what went wrong')
+    # possibly add retry count?
 
     def __unicode__(self):
         return '%s (%s) %s' % (self.object_id, self.site, self.time)

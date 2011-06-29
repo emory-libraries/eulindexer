@@ -14,10 +14,21 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+from django import forms
 from django.contrib import admin
 from eulindexer.indexer.models import IndexError
 
+
+class IndexErrorAdminForm(forms.ModelForm):
+    # custom admin form to specify textarea widget for detail field
+    class Meta:
+        model = IndexError
+        widgets = {
+            'detail': forms.Textarea(attrs={'cols': 90, 'rows': 10}),
+        }
+
 class IndexErrorAdmin(admin.ModelAdmin):
+    form = IndexErrorAdminForm
     date_hierarchy = 'time'
     list_display = ('object_id', 'site', 'time', 'detail')
     list_filter = ('site',)
