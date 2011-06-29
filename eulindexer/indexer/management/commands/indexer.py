@@ -156,7 +156,7 @@ class Command(BaseCommand):
                 self.reconnect_listener()
 
             #Process the index queue for any items that need it.
-            self.process_index_queue()
+            self.process_queue()
 
 
     def reconnect_listener(self):
@@ -217,41 +217,50 @@ class Command(BaseCommand):
                         self.to_index[pid] = {'time': datetime.now(), 'site': site}
                         break
 
-    def process_index_queue(self):
+    def process_queue(self):
+        '''Loop through items that have been queued for indexing; if
+        the configured delay time has passed, then attempt to index
+        them, and logging any indexing errors.'''
         #check if there are any items that should be indexed now
         if self.to_index:
             logger.debug('objects to be indexed: %r' % self.to_index)
 
-            indexed = []
+            queue_remove = []	
             for pid in self.to_index.iterkeys():
                 try:
-                    was_indexed = self.process_index_item(pid)
-                    if(was_indexed):
-                        indexed.append(pid)
+                    if self.index_item(pid):   # returns True on successful index
+                        queue_remove.append(pid)
                 except Exception as e:
                     logging.error("Failed to index %s (%s): %s" % \
                                       (pid, self.to_index[pid]['site'], e))
+
+                    # Add a prefix to the detail error message if we
+                    # can identify what type of error this is.
+                    detail_type = ''
+                    if isinstance(e, SolrError):
+                        detail_type = 'Solr Error: '
+                    msg = '%s%s' % (detail_type, e)
                     err = IndexError(object_id=pid, site=self.to_index[pid]['site'],
-                                     detail='%s: %s' % (e.__class__, e))
-                    # TODO: clean up detail error message based on type of exception
+                                     detail=msg)
                     err.save()
 
-                    # FIXME: for now, bypass retry logic 
-                    # (conflicts with indexerror db logging; no stop condition)
-                    indexed.append(pid)
+                    # TODO: retry logic for errors where that makes sense
+                    queue_remove.append(pid)
 
 
-            # clear out any pids that were indexed from the list of objects still to be indexed
-            for pid in indexed:
+            # clear out any pids that were indexed successfully OR
+            # errored from the list of objects still to be indexed
+            for pid in queue_remove:
                 del self.to_index[pid]
                 
 
-    def process_index_item(self, pid):
-        '''Attempt to process an item in the index list. If this fails,
-        kick up an error to eventually handle so that processing does
-        not stop for other items.
+    def index_item(self, pid):
+        '''Attempt to index an item that has been queued for
+        indexing. If this fails, kick up an error to eventually handle
+        so that processing does not stop for other items.
 
-        :param pid - the pid of the object to index in the self.to_index queue.
+        :param pid - the pid of the object to index; expected to be a
+	        key in in the current :attr:`to_index` queue.
         '''
 
         # if we've waited the configured delay time, go ahead and index
@@ -265,13 +274,20 @@ class Command(BaseCommand):
                 # FIXME: depends on trailing slash
                 response = urllib2.urlopen(indexdata_url)
                 json_value = response.read()
-            except Exception as connectionError:
+            except Exception as connection_error:
                 logger.error('Error connecting to %s for %s: %s' % \
-                                 (indexdata_url, pid, connectionError))
-                raise
+                                 (indexdata_url, pid, connection_error))
+                # wrap exception and add more detail about what went wrong for db error log
+        	raise Exception('Failed to load index data for %s from %s : %s' % \
+                                (pid, indexdata_url, connection_error))
 
-            # FIXME: catch json parse error?
-            index_data = simplejson.loads(json_value)
+            # it's possible we get data back but it can't be parsed as JSON
+            try:
+                index_data = simplejson.loads(json_value)
+            except ValueError:
+                raise Exception('Could not load index data for %s as JSON: %s' % \
+                                (pid, json_value))
+        
             try:
                 # FIXME: init solr connection at index config load time?
                 solr_interface = sunburnt.SolrInterface(index_config.solr_url)

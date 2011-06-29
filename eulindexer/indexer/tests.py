@@ -15,11 +15,13 @@
 #   limitations under the License.
 
 
+from datetime import timedelta
 from mock import Mock, patch, DEFAULT
 from os import path
 from socket import error as socket_error
 from stompest.simple import Stomp
 from stompest.error import StompFrameError
+from sunburnt import SolrError
 import urllib2
 
 from django.conf import settings
@@ -31,7 +33,7 @@ from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
-from eulindexer.indexer.models import IndexerSettings
+from eulindexer.indexer.models import IndexerSettings, IndexError
 
 from django.utils import simplejson
 from datetime import datetime, timedelta
@@ -128,36 +130,38 @@ class IndexerTest(TestCase):
 
             # check that site urls match - actual index configuration
             # loading is handled in index settings object
-            self.assertEqual(self.command.index_settings['site1'].site_url, settings.INDEXER_SITE_URLS['site1'])
-            self.assertEqual(self.command.index_settings['site2'].site_url, settings.INDEXER_SITE_URLS['site2'])
-            self.assertEqual(self.command.index_settings['site3'].site_url, settings.INDEXER_SITE_URLS['site3'])
+            self.assertEqual(self.command.index_settings['site1'].site_url,
+                             settings.INDEXER_SITE_URLS['site1'])
+            self.assertEqual(self.command.index_settings['site2'].site_url,
+                             settings.INDEXER_SITE_URLS['site2'])
+            self.assertEqual(self.command.index_settings['site3'].site_url,
+                             settings.INDEXER_SITE_URLS['site3'])
 
-    def test_process_index_queue(self):
+    def test_process_queue(self):
+        # test basic index queue processing
+        # mocking the index_item method to isolate just the process_queue logic
         pid1 = 'indexer-test:test1'
         pid2 = 'indexer-test:test2'
-        self.command.to_index[pid1] = {'time': datetime.now(), 'site': 'site1'}
-        self.command.to_index[pid2] = {'time': datetime.now(), 'site': 'site1'}
+        index_queue = {        # sample test index queue
+            pid1: {'time': datetime.now(), 'site': 'site1'},
+            pid2: {'time': datetime.now(), 'site': 'site1'}
+        }
+        self.command.to_index = index_queue.copy()
 
-        #Mock out the process index item
-        mock_process_index_item = Mock()
-        self.command.process_index_item = mock_process_index_item
+        # no items indexed
+        with patch.object(self.command, 'index_item', new=Mock(return_value=False)):
+            self.command.process_queue()
+            self.assertEqual(index_queue, self.command.to_index,
+                             'to_index queue should remain unchanged when items are not indexed')
 
-        #Test process with returned True value
-        mock_process_index_item.return_value = True
-        self.command.process_index_queue()
-        self.assertFalse(self.command.to_index.has_key(pid1))
-        self.assertFalse(self.command.to_index.has_key(pid2))
+        # all items successfully indexed
+        with patch.object(self.command, 'index_item', new=Mock(return_value=True)):
+            self.command.process_queue()
+            print self.command.to_index
+            self.assertEqual({}, self.command.to_index,
+                             'to_index queue should be empty when all items are indexed')
 
-        #Test process with returned False values
-        self.command.to_index[pid1] = {'time': datetime.now(), 'site': 'site1'}
-        self.command.to_index[pid2] = {'time': datetime.now(), 'site': 'site1'}
-        mock_process_index_item.return_value = False
-
-        self.command.process_index_queue()
-        self.assertTrue(self.command.to_index.has_key(pid1))
-        self.assertTrue(self.command.to_index.has_key(pid2))
-
-    def test_process_index_item(self):
+    def test_index_item(self):
         #Setup some objects
         pid1 = 'indexer-test:test1'
         pid2 = 'indexer-test:test2'
@@ -178,7 +182,7 @@ class IndexerTest(TestCase):
             self.command.init_cmodel_settings()
 
         #Should be false as has not been adequate time.
-        result = self.command.process_index_item(pid1)
+        result = self.command.index_item(pid1)
         self.assertFalse(result)
 
         #Configure a response
@@ -192,8 +196,45 @@ class IndexerTest(TestCase):
 
         with patch('eulindexer.indexer.management.commands.indexer.urllib2', new=mockurllib):
             with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mockSolrInterface):
-                result = self.command.process_index_item(pid2)
+                result = self.command.index_item(pid2)
                 self.assertTrue(result)
+
+    def test_process_queue_error(self):
+        # test error logging - generic error (e.g., connection errror or JSON load failure)
+        testpid = 'pid:1'
+        testsite = 'testproj'
+        err_msg = 'Failed to load index data'
+        self.command.to_index = {testpid: {'site': testsite}}
+        
+        # simulate error on index attempt
+        with patch.object(self.command, 'index_item', new=Mock(side_effect=Exception(err_msg))):
+            self.command.process_queue()
+
+        # an IndexError object should have been created for this pid
+        indexerr = IndexError.objects.get(object_id=testpid)
+        self.assertEqual(testsite, indexerr.site)
+        self.assertEqual(err_msg, indexerr.detail,
+                         'index error detail should include full exception message')
+
+    def test_process_queue_solrerror(self):
+        # test error logging - solr error when indexing is attempted
+        testpid = 'pid:2'
+        testsite = 'testproj2'
+        err_msg = 'Required fields are unspecified: "id"'
+        index_queue = {testpid: {'site': testsite}}
+        self.command.to_index = index_queue.copy()
+        
+        # simulate Solr error on index attempt
+        with patch.object(self.command, 'index_item', new=Mock(side_effect=SolrError(err_msg))):
+            self.command.process_queue()
+
+        # an IndexError object should have been created for this pid
+        indexerr = IndexError.objects.get(object_id=testpid)
+        self.assertEqual(testsite, indexerr.site)
+        self.assert_(indexerr.detail.startswith('Solr Error:'),
+                     'index error detail should be labeled as a solr error when SolrError is raised')
+        self.assert_(indexerr.detail.endswith(err_msg),
+                     'index error detail should include exception error message')
 
 
 class TestPdfObject(DigitalObject):
