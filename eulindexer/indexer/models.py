@@ -63,12 +63,19 @@ class IndexerSettings(object):
     def CMODEL_match_check(self, list_of_cmodels):
         match_found = False
 
+        #For each list of CMODELs in the overall list
         for clist in self.CMODEL_list:
             match_found = True
+            #Get each cmodel from the current list we are looking at.
             for cmodel in clist:
+                #If that cmodel in this list is not one from the object being looked at, break out and set this one to false.
                 if not cmodel in list_of_cmodels:
                     match_found = False
                     break
+
+            #Nothing that broke the matching, so break out of the main loop/
+            if(match_found):
+                break
 
 
         return match_found

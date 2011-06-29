@@ -283,11 +283,16 @@ class IndexerSettingsTest(TestCase):
         # fields and values
         webservice_data = {}
         webservice_data['SOLR_URL'] = "http://localhost:8983/"
+        content_top_level = []
+
+        #1st set of content models
         content_models = []
-        content_models.append(['info:fedora/emory-control:Collection-1.1'])
-        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
-        content_models.append(['info:fedora/emory-control:SomeOtherValue-1.1'])
-        webservice_data['CONTENT_MODELS'] = content_models
+        content_models.append('info:fedora/emory-control:Collection-1.1')
+        content_models.append('info:fedora/emory-control:EuterpeAudio-1.0')
+        content_models.append('info:fedora/emory-control:SomeOtherValue-1.1')
+        content_top_level.append(content_models)
+
+        webservice_data['CONTENT_MODELS'] = content_top_level
 
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
@@ -298,10 +303,30 @@ class IndexerSettingsTest(TestCase):
             self.assertFalse(indexer_setting.CMODEL_match_check(["DOESNOTEXIST-1.1"]))
         
             #Check for only 2 matching
-            #self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]))
+            self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]))
 
             #Check for all 3 matching
-            #self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+            self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
 
             #Check for superset (3 matching of the 4)
-            #self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+            self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+
+        #Add a 2nd set of content models that shares one model
+        content_models = []
+        content_models.append('info:fedora/emory-control:Collection-1.1')
+        content_models.append('info:fedora/emory-control:Rushdie-1.0')
+        content_top_level.append(content_models)
+        webservice_data['CONTENT_MODELS'] = content_top_level
+
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            indexer_setting = IndexerSettings(site_url)
+
+            #Check for superset (3 matching of the 4) of the 1st set of content models
+            self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+
+            #Check that we have a match for the new set of content models using a superset
+            self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Rushdie-1.0", "DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1"]))
+
+            #Check for no match with a mixture that comes from both sets but doesn't match a single set
+            self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Rushdie-1.0", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
