@@ -67,8 +67,8 @@ class IndexerTest(TestCase):
 
     def test_reconnect_listener(self):
         # configure fewer retries/wait period to make tests faster
-        self.command.max_retries = 3
-        self.command.retry_wait = 1
+        self.command.max_reconnect_retries = 3
+        self.command.retry_reconnect_wait = 1
         
         mocklistener = Mock(Stomp)
         # raise an error every time - no reconnection
@@ -81,8 +81,7 @@ class IndexerTest(TestCase):
                    new=Mock(return_value=mocklistener)):
             self.assertRaises(CommandError, self.command.reconnect_listener)
             # listener.connect should be called the configured # of retries
-            self.assertEqual(self.command.max_retries, mocklistener.connect.call_count)
-
+            self.assertEqual(self.command.max_reconnect_retries, mocklistener.connect.call_count)
 
         mocklistener.reset_mock()	# reset method call count
         mocklistener.raised_error = False
@@ -235,6 +234,37 @@ class IndexerTest(TestCase):
                      'index error detail should be labeled as a solr error when SolrError is raised')
         self.assert_(indexerr.detail.endswith(err_msg),
                      'index error detail should include exception error message')
+
+    def test_process_queue_recoverableerror(self):
+        # test index retries & error logging for a potentially recoverable error
+        testpid = 'pid:1'
+        testsite = 'testproj'
+        err_msg = 'Failed to load index data'
+        self.command.to_index = {testpid: {'site': testsite, 'tries': 0}}
+        # configure to only try twice
+        self.command.index_max_tries = 2
+
+        # simulate recoverable error 
+        with patch.object(self.command, 'index_item',
+                          new=Mock(side_effect=indexer.RecoverableIndexError(err_msg))):
+            # first index attempt
+            self.command.process_queue()
+            self.assert_(testpid in self.command.to_index,
+                         'on a recoverable error, pid should still be index queue')
+            self.assertEqual(1, self.command.to_index[testpid]['tries'],
+                             'index attempt count should be tracked in index queue')
+            self.assertEqual(0, IndexError.objects.filter(object_id=testpid).count(),
+                             'recoverable error should not be logged to db on first attempt')
+
+            # second index attempt  (2 tries configured)
+            self.command.process_queue()
+            self.assert_(testpid not in self.command.to_index,
+                         'on a recoverable error after max tries, pid should not be index queue')
+            # when we hit the configured max number of attempts to index, error should be logged in db
+            indexerr = IndexError.objects.get(object_id=testpid)
+            self.assertEqual(testsite, indexerr.site)
+            self.assert_('Failed to index' in indexerr.detail)
+            self.assert_('2 attempts'  in indexerr.detail)
 
 
 class TestPdfObject(DigitalObject):

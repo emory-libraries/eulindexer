@@ -47,6 +47,7 @@ class Command(BaseCommand):
     # TODO: make delay configurable
     index_delay = 4  # time delay after the *first* modification message before indexing should be done
     index_delta = timedelta(seconds=index_delay)
+    index_max_tries = 3  # number of times to try indexing an item, if a recoverable error happens
 
     fedora_server = None
     stomp_port = None
@@ -54,18 +55,24 @@ class Command(BaseCommand):
 
     # connection error handling/retry settings (TODO: these should probably be configurable)
     # FIXME: django settings and/or command options?
-    retry_wait = 5
+    retry_reconnect_wait = 5
     # if we lose the connection to fedora, how long do we wait between attemps to reconnect?
-    max_retries = 5
+    max_reconnect_retries = 5
     # how many times do we try to reconnect to fedora before we give up?
     
     option_list = BaseCommand.option_list + (
-        make_option('--max_retries', type='int', dest='max_retries', default=max_retries,
+        make_option('--max-reconnect-retries', type='int', dest='max_reconnect_retries',
+                    default=max_reconnect_retries,
                     help='How many times to try reconnecting to Fedora if the connection ' +
                     	 'is lost (default: %default)'),
-        make_option('--retry_wait', type='int', dest='retry_wait', default=max_retries,
+        make_option('--retry-reconnect-wait', type='int', dest='retry_reconnect_wait',
+                    default=retry_reconnect_wait,
                     help='How many seconds to wait between reconnect attempts if the ' +
                     	 'connection to Fedora is lost (default: %default)'),
+        make_option('--index-max-tries', type='int', dest='index_max_tries',
+                    default=index_max_tries,
+                    help='Number of times to attempt indexing an item when a potentially ' +
+                    	 'recoverable error is encountered'),
 
     )
 
@@ -96,10 +103,12 @@ class Command(BaseCommand):
             verbosity = v_normal
 
         # override retry/wait default settings if specified
-        if 'retry_wait' in options:
-            self.retry_wait = options['retry_wait']
-        if 'max_retries' in options:
-            self.max_retries = options['max_retries']
+        if 'retry_reconnect_wait' in options:
+            self.retry_reconnect_wait = options['retry_reconnect_wait']
+        if 'max_reconnect_retries' in options:
+            self.max_reconnect_retries = options['max_reconnect_retries']
+        if 'index-max-tries' in options:
+            self.index_max_tries = options['index-max-tries']
 
         # check for required settings
 
@@ -167,8 +176,8 @@ class Command(BaseCommand):
         
         # wait the configured time and try to re-establish the listener
         retry_count = 1
-        while(retry_count <= self.max_retries):
-            sleep(self.retry_wait)
+        while(retry_count <= self.max_reconnect_retries):
+            sleep(self.retry_reconnect_wait)
             try:
                 self.listener = None
                 self.init_listener()
@@ -179,7 +188,7 @@ class Command(BaseCommand):
             # listen will generate a socket error
             except socketerror:
                 logger.error('Reconnect attempt %d of %d failed; waiting %ds before trying again' % \
-                             (retry_count, self.max_retries, self.retry_wait))
+                             (retry_count, self.max_reconnect_retries, self.retry_reconnect_wait))
                 retry_count += 1
         
         # if we reached the max retry without connecting, bail out
@@ -214,13 +223,13 @@ class Command(BaseCommand):
                 # check if the content models match one of the object types we are indexing
                 for site, index_setting in self.index_settings.iteritems():
                     if index_setting.CMODEL_match_check(obj_cmodels):
-                        self.to_index[pid] = {'time': datetime.now(), 'site': site}
+                        self.to_index[pid] = {'time': datetime.now(), 'site': site, 'tries': 0}
                         break
 
     def process_queue(self):
         '''Loop through items that have been queued for indexing; if
         the configured delay time has passed, then attempt to index
-        them, and logging any indexing errors.'''
+        them, and log any indexing errors.'''
         #check if there are any items that should be indexed now
         if self.to_index:
             logger.debug('objects to be indexed: %r' % self.to_index)
@@ -230,6 +239,35 @@ class Command(BaseCommand):
                 try:
                     if self.index_item(pid):   # returns True on successful index
                         queue_remove.append(pid)
+                        
+                except RecoverableIndexError as rie:
+                    # If the index attempt resulted in error that we
+                    # can potentially recover from, keep the item in
+                    # the queue and attempt to index it again.
+
+                    # Increase the count of index attempts, so we know when to stop.
+                    self.to_index[pid]['tries'] += 1
+                    
+                    # quit when we reached the configured number of index attempts
+                    if self.to_index[pid]['tries'] >= self.index_max_tries:
+                        logging.error("Failed to index %s (%s) after %d tries: %s" % \
+                                     (pid, self.to_index[pid]['site'], self.to_index[pid]['tries'], rie))
+                        
+                        err = IndexError(object_id=pid, site=self.to_index[pid]['site'],
+                                         detail='Failed to index after %d attempts: %s' % \
+                                         (self.to_index[pid]['tries'], rie))
+                        err.save()
+                        # we've hit the index retry limit, so remove from the queue
+                        queue_remove.append(pid)
+                        
+                    else:
+                        logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s" % \
+                                     (pid, self.to_index[pid]['site'], self.to_index[pid]['tries'], rie))
+
+                        # update the index time - wait the configured index delay before
+                        # attempting to reindex again
+                        self.to_index[pid]['time'] = datetime.now()
+                    
                 except Exception as e:
                     logging.error("Failed to index %s (%s): %s" % \
                                       (pid, self.to_index[pid]['site'], e))
@@ -244,7 +282,8 @@ class Command(BaseCommand):
                                      detail=msg)
                     err.save()
 
-                    # TODO: retry logic for errors where that makes sense
+                    # any exception not caught in the recoverable error block should be
+                    # removed from the index queue
                     queue_remove.append(pid)
 
 
@@ -278,7 +317,7 @@ class Command(BaseCommand):
                 logger.error('Error connecting to %s for %s: %s' % \
                                  (indexdata_url, pid, connection_error))
                 # wrap exception and add more detail about what went wrong for db error log
-        	raise Exception('Failed to load index data for %s from %s : %s' % \
+                raise IndexDataReadError('Failed to load index data for %s from %s : %s' % \
                                 (pid, indexdata_url, connection_error))
 
             # it's possible we get data back but it can't be parsed as JSON
@@ -308,3 +347,16 @@ class Command(BaseCommand):
         else:
             return False
             
+
+
+class RecoverableIndexError(Exception):
+    '''Custom Exception wrapper class for an index errors where a
+    recovery is possible and the index should be retried.'''
+    pass
+
+class IndexDataReadError(RecoverableIndexError):
+    '''Custom exception for failure to retrieve the index data for an item; should be considered
+    as possibly recoverable, since the site may be temporarily available.'''
+    pass
+
+
