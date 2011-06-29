@@ -33,6 +33,10 @@ from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
 from eulindexer.indexer.models import IndexerSettings
 
+from django.utils import simplejson
+from datetime import datetime, timedelta
+from sunburnt import sunburnt
+
 
 class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
@@ -128,6 +132,68 @@ class IndexerTest(TestCase):
             self.assertEqual(self.command.index_settings['site2'].site_url, settings.INDEXER_SITE_URLS['site2'])
             self.assertEqual(self.command.index_settings['site3'].site_url, settings.INDEXER_SITE_URLS['site3'])
 
+    def test_process_index_queue(self):
+        pid1 = 'indexer-test:test1'
+        pid2 = 'indexer-test:test2'
+        self.command.to_index[pid1] = {'time': datetime.now(), 'site': 'site1'}
+        self.command.to_index[pid2] = {'time': datetime.now(), 'site': 'site1'}
+
+        #Mock out the process index item
+        mock_process_index_item = Mock()
+        self.command.process_index_item = mock_process_index_item
+
+        #Test process with returned True value
+        mock_process_index_item.return_value = True
+        self.command.process_index_queue()
+        self.assertFalse(self.command.to_index.has_key(pid1))
+        self.assertFalse(self.command.to_index.has_key(pid2))
+
+        #Test process with returned False values
+        self.command.to_index[pid1] = {'time': datetime.now(), 'site': 'site1'}
+        self.command.to_index[pid2] = {'time': datetime.now(), 'site': 'site1'}
+        mock_process_index_item.return_value = False
+
+        self.command.process_index_queue()
+        self.assertTrue(self.command.to_index.has_key(pid1))
+        self.assertTrue(self.command.to_index.has_key(pid2))
+
+    def test_process_index_item(self):
+        #Setup some objects
+        pid1 = 'indexer-test:test1'
+        pid2 = 'indexer-test:test2'
+        self.command.to_index[pid1] = {'time': datetime.now(), 'site': self._INDEXER_SITE_URLS.iterkeys().next() }
+        self.command.to_index[pid2] = {'time': datetime.now()-timedelta(seconds=self.command.index_delay), 'site': self._INDEXER_SITE_URLS.iterkeys().next()}
+
+        #Configure settings
+        webservice_data = {}
+        webservice_data['SOLR_URL'] = "http://localhost:8983/"
+        content_models = []
+        content_models.append(['info:fedora/emory-control:Collection-1.1'])
+        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
+        webservice_data['CONTENT_MODELS'] = content_models
+
+        mockurllib = Mock(urllib2)
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
+        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+            self.command.init_cmodel_settings()
+
+        #Should be false as has not been adequate time.
+        result = self.command.process_index_item(pid1)
+        self.assertFalse(result)
+
+        #Configure a response
+        webservice_data = {}
+        webservice_data['pid'] = pid2
+        webservice_data['some_other_value'] = 'sample value'
+
+
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
+        mockSolrInterface = Mock(sunburnt)
+
+        with patch('eulindexer.indexer.management.commands.indexer.urllib2', new=mockurllib):
+            with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mockSolrInterface):
+                result = self.command.process_index_item(pid2)
+                self.assertTrue(result)
 
 
 class TestPdfObject(DigitalObject):
@@ -181,15 +247,25 @@ class IndexerSettingsTest(TestCase):
             self.assertEqual([], indexer_setting.CMODEL_list)
 
         # fields but no values
-        mockurllib.urlopen.return_value.read.return_value = '{"SOLR_URL": "", "CONTENT_MODELS": []}'
+        webservice_data = {}
+        webservice_data['SOLR_URL'] = ""
+        webservice_data['CONTENT_MODELS'] = ""
+
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             indexer_setting = IndexerSettings(site_url)
             self.assertEqual(site_url, indexer_setting.site_url)
             self.assertEqual('', indexer_setting.solr_url)
-            self.assertEqual([], indexer_setting.CMODEL_list)
+            self.assertEqual('', indexer_setting.CMODEL_list)
 
         # fields and values
-        mockurllib.urlopen.return_value.read.return_value = '{"SOLR_URL": "http://localhost:8983/", "CONTENT_MODELS": [["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]]}'
+        webservice_data['SOLR_URL'] = "http://localhost:8983/"
+        content_models = []
+        content_models.append(['info:fedora/emory-control:Collection-1.1'])
+        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
+        webservice_data['CONTENT_MODELS'] = content_models
+
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             indexer_setting = IndexerSettings(site_url)
             self.assertEqual(site_url, indexer_setting.site_url)
@@ -198,18 +274,34 @@ class IndexerSettingsTest(TestCase):
 
 
     def test_cmodel_comparison(self):
+        # Test init & load configuration
+        site_url = 'http://localhost:0001'
         # Setup an indexer setting
         mockurllib = Mock(urllib2)
-        # empty response
-        mockurllib.urlopen.return_value.read.return_value = '{}'
+
+        
+        # fields and values
+        webservice_data = {}
+        webservice_data['SOLR_URL'] = "http://localhost:8983/"
+        content_models = []
+        content_models.append(['info:fedora/emory-control:Collection-1.1'])
+        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
+        content_models.append(['info:fedora/emory-control:SomeOtherValue-1.1'])
+        webservice_data['CONTENT_MODELS'] = content_models
+
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            indexer_setting = IndexerSettings('http://localhost:0001')
-            indexer_setting.CMODEL_list = [["info:fedora/emory-control:Collection-1.1"],["info:fedora/emory-control:EuterpeAudio-1.0"],["info:fedora/emory-control:SomeOtherValue-1.1"]]
+            indexer_setting = IndexerSettings(site_url)
+
+            #Check for only 1 matching
+            self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1"]))
+            self.assertFalse(indexer_setting.CMODEL_match_check(["DOESNOTEXIST-1.1"]))
         
-        #Check for 1 value match
-        #self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1"]))
-        #self.assertFalse(indexer_setting.CMODEL_match_check(["DOESNOTEXIST-1.1"]))
-        
-        #Check for 2 value match
-        #self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]))
-        #self.assertFalse(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:SomeOtherValue-1.1"]))
+            #Check for only 2 matching
+            #self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]))
+
+            #Check for all 3 matching
+            #self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+
+            #Check for superset (3 matching of the 4)
+            #self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
