@@ -202,13 +202,16 @@ class Command(BaseCommand):
         
         # when an object is purged from fedora, remove it from the index
         if method == 'purgeObject':
-            # FIXME: how to make this more generic? (not solr-specific)
-            solr = sunburnt.SolrInterface(settings.SOLR_SERVER_URL, settings.SOLR_SCHEMA)
-            solr.delete({'PID': pid})
-            logger.info('Deleting %s from index' % pid)
+            # since we don't know which index (if any) this object was indexed in,
+            # delete it from all configured indexes
+            for index in self.index_settings.itervalues():
+                solr = sunburnt.SolrInterface(index.solr_url)
+                # pid is the required solr id in the base DigitalObject; assuming people won't change that
+                solr.delete({'pid': pid})  
+            logger.info('Deleting %s from all configured Solr indexes' % pid)
             # commit?
             
-            # ingest, modify object or modify datastream
+        # ingest, modify object or modify datastream
         else:
             # if the object isn't already in the queue to be indexed, check if it should be
             if pid not in self.to_index:
@@ -216,7 +219,7 @@ class Command(BaseCommand):
                 obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid, modelns.hasModel))
 
                 #UGLY temporary hack. . .
-                obj_cmodels.remove('info:fedora/fedora-system:FedoraObject-3.0')
+                #obj_cmodels.remove('info:fedora/fedora-system:FedoraObject-3.0')
                 
                 # includes generic content models
 
@@ -232,7 +235,7 @@ class Command(BaseCommand):
         them, and log any indexing errors.'''
         #check if there are any items that should be indexed now
         if self.to_index:
-            logger.debug('objects to be indexed: %r' % self.to_index)
+            logger.debug('Objects queued to be indexed: %s' % ', '.join(self.to_index.keys()))
 
             queue_remove = []	
             for pid in self.to_index.iterkeys():

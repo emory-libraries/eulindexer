@@ -136,6 +136,42 @@ class IndexerTest(TestCase):
             self.assertEqual(self.command.index_settings['site3'].site_url,
                              settings.INDEXER_SITE_URLS['site3'])
 
+    def test_process_message_purgeobject(self):
+        # test processing a purge-object message
+
+        # mockurllib = Mock(urllib2)
+        # mockurllib.urlopen.return_value.read.return_value = simplejson.dumps({})
+        # with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
+
+        indexconfig1 = Mock(IndexerSettings)
+        indexconfig1.solr_url = "http://solr:port/core"
+        indexconfig2 = Mock(IndexerSettings)
+        indexconfig2.solr_url = "http://different.solr:port/core2"
+        self.command.index_settings = {
+            'site1': indexconfig1,
+            'site2': indexconfig2,
+            }
+
+        mocksunburnt = Mock()
+        testpid = 'testpid:1'
+        with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mocksunburnt):
+            self.command.process_message(testpid, 'purgeObject')
+            print mocksunburnt.SolrInterface.call_args_list
+            index_count = len(self.command.index_settings)
+            self.assertEqual(index_count, mocksunburnt.SolrInterface.call_count,
+                             'one solr connection should be initialized for each connection')
+            # check that both solr configurations were used
+            # multiple calls- checking list of call args (tuple of args, kwargs - most recent call is first)
+            self.assertEqual(((indexconfig1.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[1])
+            self.assertEqual(((indexconfig2.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[0])
+            self.assertEqual(index_count, mocksunburnt.SolrInterface.return_value.delete.call_count,
+                             'solr delete should be called for each configured index')
+
+            # mock's assert_called_with seems to have trouble comparing a dictionary arg
+            args, kwargs = mocksunburnt.SolrInterface.return_value.delete.call_args
+            self.assertEqual({'pid': testpid}, args[0],
+                             'solr delete should be called with pid passed in for processing')
+
     def test_process_queue(self):
         # test basic index queue processing
         # mocking the index_item method to isolate just the process_queue logic
