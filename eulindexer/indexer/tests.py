@@ -33,7 +33,7 @@ from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
-from eulindexer.indexer.models import IndexerSettings, IndexError
+from eulindexer.indexer.models import SiteIndex, IndexError
 
 from django.utils import simplejson
 from datetime import datetime, timedelta
@@ -140,41 +140,44 @@ class IndexerTest(TestCase):
                 self.assertEqual(self.command.index_settings['site3'].site_url,
                              settings.INDEXER_SITE_URLS['site3'])
 
-    #def test_process_message_purgeobject(self):
+    def test_process_message_purgeobject(self):
         # test processing a purge-object message
 
         # mockurllib = Mock(urllib2)
         # mockurllib.urlopen.return_value.read.return_value = simplejson.dumps({})
         # with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
 
-        '''indexconfig1 = Mock(IndexerSettings)
+        mocksunburnt = Mock()
+
+        indexconfig1 = Mock(SiteIndex)
         indexconfig1.solr_url = "http://solr:port/core"
-        indexconfig2 = Mock(IndexerSettings)
+        indexconfig1.solr_interface = mocksunburnt
+        indexconfig2 = Mock(SiteIndex)
         indexconfig2.solr_url = "http://different.solr:port/core2"
+        indexconfig2.solr_interface = mocksunburnt
         self.command.index_settings = {
             'site1': indexconfig1,
             'site2': indexconfig2,
             }
+        #index_count = len(self.command.index_settings)
+        #self.assertEqual(index_count, mocksunburnt.SolrInterface.call_count, 'one solr connection should be initialized for each connection')
 
-        mocksunburnt = Mock()
-        testpid = 'testpid:1'
-        with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mocksunburnt):
-            self.command.process_message(testpid, 'purgeObject')
-            print mocksunburnt.SolrInterface.call_args_list
-            index_count = len(self.command.index_settings)
-            self.assertEqual(index_count, mocksunburnt.SolrInterface.call_count,
-                             'one solr connection should be initialized for each connection')
-            # check that both solr configurations were used
-            # multiple calls- checking list of call args (tuple of args, kwargs - most recent call is first)
-            self.assertEqual(((indexconfig1.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[1])
-            self.assertEqual(((indexconfig2.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[0])
-            self.assertEqual(index_count, mocksunburnt.SolrInterface.return_value.delete.call_count,
-                             'solr delete should be called for each configured index')
+        # check that both solr configurations were used
+        # multiple calls- checking list of call args (tuple of args, kwargs - most recent call is first)
+        #self.assertEqual(((indexconfig1.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[1])
+        #self.assertEqual(((indexconfig2.solr_url,), {}), mocksunburnt.SolrInterface.call_args_list[0])
+        #self.assertEqual(index_count, mocksunburnt.SolrInterface.return_value.delete.call_count,
+                    #'solr delete should be called for each configured index')
+
+
+        #testpid = 'testpid:1'
+        #with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mocksunburnt):
+            #self.command.process_message(testpid, 'purgeObject')
 
             # mock's assert_called_with seems to have trouble comparing a dictionary arg
-            args, kwargs = mocksunburnt.SolrInterface.return_value.delete.call_args
-            self.assertEqual({'pid': testpid}, args[0],
-                             'solr delete should be called with pid passed in for processing') '''
+            #args, kwargs = mocksunburnt.SolrInterface.return_value.delete.call_args
+            #self.assertEqual({'pid': testpid}, args[0],
+                             #'solr delete should be called with pid passed in for processing')
 
 
     def test_process_queue(self):
@@ -347,7 +350,7 @@ class PdfToTextTest(TestCase):
         text = pdf_to_text(pdfobj.pdf.content)
         self.assertEqual(self.pdf_text, text)
 
-class IndexerSettingsTest(TestCase):
+class SiteIndexTest(TestCase):
 
     def test_init(self):
         # Test init & load configuration
@@ -364,7 +367,7 @@ class IndexerSettingsTest(TestCase):
 
         #This will fail as sunburnt won't be reachable.
         #with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            #indexer_setting = IndexerSettings(site_url)
+            #indexer_setting = SiteIndex(site_url)
             #self.assertRaises(RelativeURIError, indexer_setting.load_configuration)
 
         # fields but no values
@@ -375,7 +378,7 @@ class IndexerSettingsTest(TestCase):
         #This will fail as sunburnt won't be reachable.
         #mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         #with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            #indexer_setting = IndexerSettings(site_url)
+            #indexer_setting = SiteIndex(site_url)
             #self.assertRaises(RelativeURIError, indexer_setting.load_configuration)
 
         # fields and values
@@ -388,7 +391,7 @@ class IndexerSettingsTest(TestCase):
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = IndexerSettings(site_url)
+                indexer_setting = SiteIndex(site_url)
                 indexer_setting.load_configuration
                 self.assertEqual(site_url, indexer_setting.site_url)
                 self.assertEqual('http://localhost:8983/', indexer_setting.solr_url)
@@ -423,7 +426,7 @@ class IndexerSettingsTest(TestCase):
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = IndexerSettings(site_url)
+                indexer_setting = SiteIndex(site_url)
 
                 #Check for only 1 matching
                 self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1"]))
@@ -448,7 +451,7 @@ class IndexerSettingsTest(TestCase):
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = IndexerSettings(site_url)
+                indexer_setting = SiteIndex(site_url)
 
                 #Check for superset (3 matching of the 4) of the 1st set of content models
                 self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
