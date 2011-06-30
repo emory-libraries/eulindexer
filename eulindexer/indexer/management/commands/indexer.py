@@ -34,7 +34,8 @@ from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
 from django.utils import simplejson
-from eulindexer.indexer.models import SiteIndex, IndexError
+from eulindexer.indexer.models import SiteIndex, IndexError, \
+     init_configured_indexes
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +89,15 @@ class Command(BaseCommand):
                     (self.fedora_server, self.stomp_port))
         self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
 
+<<<<<<< HEAD
     def init_cmodel_settings(self, *args, **options):
         self.index_settings = {}
         for site, url in settings.INDEXER_SITE_URLS.iteritems():
             self.index_settings[site] = SiteIndex(url)
 
 
+=======
+>>>>>>> move logic for loading configured indexes out of indexer command into a common method for re-use
     def handle(self, *args, **options):
         # verbosity should be set by django BaseCommand standard options
         v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
@@ -125,8 +129,8 @@ class Command(BaseCommand):
         # body is atom entry... category data includes which  datastream modified when appropriate
 
 
-        self.init_cmodel_settings()
-
+        self.index_settings = init_configured_indexes()
+    
         if verbosity > 1:
             self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
             for site, index_setting in self.index_settings.iteritems():

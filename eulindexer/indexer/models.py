@@ -17,6 +17,7 @@
 import logging
 import urllib2
 
+from django.conf import settings
 from django.db import models
 from django.utils import simplejson
 
@@ -92,3 +93,15 @@ class IndexerSettings(object):
 
 
         return match_found
+
+
+def init_configured_indexes():
+    '''Initialize a :class:`IndexerSettings` for each site configured
+    in Django settings.  Returns a dictionary of site name (matching
+    the keys in INDEXER_SITE_URLS) and :class:`IndexerSettings`
+    objects.'''
+    indexes = {}
+    for site, url in settings.INDEXER_SITE_URLS.iteritems():
+        indexes[site] = IndexerSettings(url)
+    return indexes
+    

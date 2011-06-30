@@ -33,7 +33,8 @@ from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
-from eulindexer.indexer.models import SiteIndex, IndexError
+from eulindexer.indexer.models import SiteIndex, IndexError, \
+	init_configured_indexes
 
 from django.utils import simplejson
 from datetime import datetime, timedelta
@@ -100,46 +101,6 @@ class IndexerTest(TestCase):
             # listener.connect should be called twice - failure, then success
             self.assertEqual(2, mocklistener.connect.call_count)
 
-    def test_init_cmodel_settings(self):
-        #Setup some known settings values
-        settings.INDEXER_SITE_URLS = {
-            'site1': 'http://localhost:0001', 
-            'site2': 'http://localhost:0002', 
-            'site3': 'http://localhost:0003'
-        }
-
-        # Try to connect to an unavailable server. Not ideal handling
-        # currently. Just verifying app will throw an error and not
-        # start until the unreachable host is up. Should likely be
-        # handled some other way eventually.
-        self.assertRaises(urllib2.HTTPError, self.command.init_cmodel_settings)
-
-        # Mock urllib calls - no data for now
-        mockurllib = Mock(urllib2)
-        mockurllib.urlopen.return_value.read.return_value = '{}'
-
-        # Mock sunburnt.
-        mocksunburnt = Mock(sunburnt)
-
-        # Verify index settings are loaded
-        with patch('eulindexer.indexer.models.urllib2',
-                   new=mockurllib):
-            with patch('eulindexer.indexer.models.sunburnt',
-                   new=mocksunburnt):
-                self.command.init_cmodel_settings()
-                self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
-                                 len(self.command.index_settings.keys()),
-                                 'indexer should initialize one index setting per configured indexer site')
-
-                # check that site urls match - actual index configuration
-                # loading is handled in index settings object
-                self.assertEqual(self.command.index_settings['site1'].site_url,
-                                 settings.INDEXER_SITE_URLS['site1'])
-                self.assertEqual(self.command.index_settings['site2'].site_url,
-                                 settings.INDEXER_SITE_URLS['site2'])
-                self.assertEqual(self.command.index_settings['site3'].site_url,
-                             settings.INDEXER_SITE_URLS['site3'])
-
     def test_process_message_purgeobject(self):
         # test processing a purge-object message
 
@@ -204,6 +165,7 @@ class IndexerTest(TestCase):
             self.assertEqual({}, self.command.to_index,
                              'to_index queue should be empty when all items are indexed')
 
+    @patch('eulindexer.indexer.models.sunburnt')
     def test_index_item(self):
         #Setup some objects
         pid1 = 'indexer-test:test1'
@@ -221,14 +183,10 @@ class IndexerTest(TestCase):
 
         #Mock out urllib2
         mockurllib = Mock(urllib2)
-
-        #mock out sunburnt
-        mockSolrInterface = Mock(sunburnt)
-
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            with patch('eulindexer.indexer.models.sunburnt', new=mockSolrInterface):
-                self.command.init_cmodel_settings()
+            # TODO: simpler way to set up config for testing ?
+            self.command.index_settings = init_configured_indexes()
 
         #Should be false as has not been adequate time.
         result = self.command.index_item(pid1)
@@ -239,13 +197,11 @@ class IndexerTest(TestCase):
         webservice_data['pid'] = pid2
         webservice_data['some_other_value'] = 'sample value'
 
-
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
 
         with patch('eulindexer.indexer.management.commands.indexer.urllib2', new=mockurllib):
-            with patch('eulindexer.indexer.management.commands.indexer.sunburnt', new=mockSolrInterface):
-                result = self.command.index_item(pid2)
-                self.assertTrue(result)
+            result = self.command.index_item(pid2)
+            self.assertTrue(result)
 
     def test_process_queue_error(self):
         # test error logging - generic error (e.g., connection errror or JSON load failure)
@@ -461,3 +417,54 @@ class SiteIndexTest(TestCase):
 
                 #Check for no match with a mixture that comes from both sets but doesn't match a single set
                 self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Rushdie-1.0", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+
+
+class TestInitConfiguredIndexes(TestCase):
+
+    def setUp(self):
+        # store real configuration for sites to be indexed
+        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
+        # define sites for testing
+        settings.INDEXER_SITE_URLS = {
+            'site1': 'http://localhost:0001', 
+            'site2': 'http://localhost:0002', 
+            'site3': 'http://localhost:0003'
+        }
+
+    def tearDown(self):
+        # restore index site configuration
+        if self._INDEXER_SITE_URLS is None:
+            delattr(settings, 'INDEXER_SITE_URLS')
+        else:
+            settings.INDEXER_SITE_URLS = self._INDEXER_SITE_URLS
+
+    def test_connection_error(self):
+        # Try to connect to an unavailable server. Not ideal handling
+        # currently. Just verifying app will throw an error and not
+        # start until the unreachable host is up. Should likely be
+        # handled some other way eventually.
+        self.assertRaises(urllib2.HTTPError, init_configured_indexes)
+
+    # Mock urllib calls to return an empty JSON response
+    mockurllib = Mock(urllib2)
+    mockurllib.urlopen.return_value.read.return_value = '{}'
+
+    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_init(self):
+        # Verify index settings are loaded
+        indexes = init_configured_indexes()
+        self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
+                         len(indexes.keys()),
+                         'init_configured_index should initialize one index per configured site')
+        
+        # check that site urls match - actual index configuration
+        # loading is handled in index settings object
+        self.assertEqual(indexes['site1'].site_url,
+                         settings.INDEXER_SITE_URLS['site1'])
+        self.assertEqual(indexes['site2'].site_url,
+                         settings.INDEXER_SITE_URLS['site2'])
+        self.assertEqual(indexes['site3'].site_url,
+                         settings.INDEXER_SITE_URLS['site3'])
+
+        # solr initialization, etc. is handled by SiteIndex class & tested there
