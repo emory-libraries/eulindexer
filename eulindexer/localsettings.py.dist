@@ -44,12 +44,18 @@ INDEXER_SITE_URLS = {
     'project-nickname': 'http://example.host.name/indexdata/',
 }
 
-# Needed for some tests - should this be mocked out?
+# Needed for some tests - should this be mocked out? 
 FEDORA_ROOT='http://localhost:8080/fedora/'
 FEDORA_TEST_ROOT='http://localhost:8080/fedora/'
 FEDORA_TEST_USER='fedoraAdmin'
 FEDORA_TEST_PASSWORD='fedoraAdmin'
 FEDORA_PIDSPACE = 'changme'
+
+# Where do we listen for fedora STOMP update messages? See FEDORA-MQ.rst
+INDEXER_STOMP_SERVER = 'localhost' # the host running fedora
+INDEXER_STOMP_PORT = 61613         # the port fedora publishes STOMP updates on
+INDEXER_STOMP_CHANNEL = '/queue/fedora.indexer.updates' # the message target fedora publishes to
+                                                        # use /topic/name if the target is a topic
 
 # basic logging configuration for django 1.3 - adjust as needed
 LOGGING = {

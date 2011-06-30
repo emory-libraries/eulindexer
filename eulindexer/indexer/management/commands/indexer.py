@@ -82,11 +82,11 @@ class Command(BaseCommand):
             self.fedora_server, set, fedora_port = fedora_info.netloc.partition(':')
             self.stomp_port = 61613    # TODO: make configurable?
 
-        self.listener = Stomp(self.fedora_server, self.stomp_port)
+        self.listener = Stomp(settings.INDEXER_STOMP_SERVER, settings.INDEXER_STOMP_PORT)
         self.listener.connect()
         logger.info('Connected to Fedora message queue on %s:%i' % \
                     (self.fedora_server, self.stomp_port))
-        self.listener.subscribe('/topic/fedora.apim.update', {'ack': 'client'})  #  can we use auto-ack ?
+        self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
 
     def init_cmodel_settings(self, *args, **options):
         self.index_settings = {}
