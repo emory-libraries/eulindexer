@@ -45,7 +45,6 @@ except NameError:
 del sys
 
 
-TEST_RUNNER='xmlrunner.extra.djangotestrunner.XMLTestRunner'
 try:
     # use xmlrunner if it's installed; default runner otherwise. download
     # it from http://github.com/danielfm/unittest-xml-reporting/ to output
