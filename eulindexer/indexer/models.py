@@ -56,9 +56,12 @@ class IndexerSettings(object):
 
         # FIXME: is it an error if either/both of these are not present?
 
-        logger.info('Loaded index configuration for %s:\n\tSOLR url:\t%s\n\tContent Models:\t%s' % \
-                        (self.site_url, self.solr_url, self.CMODEL_list))
-        # TODO: print cmodel lists in a more readable format...
+        # generate a nice summary of the configuration 
+        summary = 'Loaded index configuration for %s' % self.site_url
+        summary += '\n  Solr url: %s' % self.solr_url
+        # list each group of cmodels on one line, so it easier to see how they are grouped
+        summary += '\n  Content Models:\n\t%s' % '\n\t'.join(', '.join(group) for group in self.CMODEL_list)
+        logger.info(summary)
 
     def CMODEL_match_check(self, list_of_cmodels):
         match_found = False
