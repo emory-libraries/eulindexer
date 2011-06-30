@@ -34,7 +34,7 @@ from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
 from django.utils import simplejson
-from eulindexer.indexer.models import IndexerSettings, IndexError
+from eulindexer.indexer.models import SiteIndex, IndexError
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class Command(BaseCommand):
     def init_cmodel_settings(self, *args, **options):
         self.index_settings = {}
         for site, url in settings.INDEXER_SITE_URLS.iteritems():
-            self.index_settings[site] = IndexerSettings(url)
+            self.index_settings[site] = SiteIndex(url)
 
 
     def handle(self, *args, **options):
@@ -205,9 +205,8 @@ class Command(BaseCommand):
             # since we don't know which index (if any) this object was indexed in,
             # delete it from all configured indexes
             for index in self.index_settings.itervalues():
-                solr = sunburnt.SolrInterface(index.solr_url)
                 # pid is the required solr id in the base DigitalObject; assuming people won't change that
-                solr.delete({'pid': pid})  
+                index.solr_interface.delete({'pid': pid})
             logger.info('Deleting %s from all configured Solr indexes' % pid)
             # commit?
             
