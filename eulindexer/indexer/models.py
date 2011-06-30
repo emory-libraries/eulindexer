@@ -20,6 +20,8 @@ import urllib2
 from django.db import models
 from django.utils import simplejson
 
+from sunburnt import sunburnt, SolrError
+
 logger = logging.getLogger(__name__)
 
 class IndexError(models.Model):
@@ -40,6 +42,7 @@ class IndexerSettings(object):
         self.site_url = site_url
         self.CMODEL_list = []
         self.solr_url = ''
+        self.solr_interface = ''
         self.load_configuration()
 
     def load_configuration(self):
@@ -50,6 +53,13 @@ class IndexerSettings(object):
         
         if 'SOLR_URL' in index_config:
             self.solr_url = index_config['SOLR_URL']
+
+            # Instantiate a connection to this solr instance.
+            try:
+                self.solr_interface = sunburnt.SolrInterface(self.solr_url)
+            except Exception as se:
+                logger.error('Unable to initialize SOLR (%s) settings for application url %s' % (self.solr_url, self.site_url))
+                raise
         
         if 'CONTENT_MODELS' in index_config:
             self.CMODEL_list = index_config['CONTENT_MODELS']
