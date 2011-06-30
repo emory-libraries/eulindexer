@@ -331,12 +331,10 @@ class Command(BaseCommand):
                                 (pid, json_value))
         
             try:
-                # FIXME: init solr connection at index config load time?
-                solr_interface = sunburnt.SolrInterface(index_config.solr_url)
-                solr_interface.add(index_data)
+                index_config.solr_interface.add(index_data)
                 #TODO: Pool updates of similar content items to reduce commits?
                 # or, better - configure solr to handle according to application needs
-                solr_interface.commit()
+                index_config.solr_interface.commit()
             except SolrError as se:
                 logger.error('Error indexing for %s: %s' % (pid, se))
                 raise
