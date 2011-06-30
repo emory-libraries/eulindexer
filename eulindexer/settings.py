@@ -44,16 +44,17 @@ except NameError:
     pass # EXTENSION_DIRS not defined. This is OK; we just won't use it.
 del sys
 
-# use eulfedora test suite runner for start/stop test fedora configuration & setup
-TEST_RUNNER = 'eulfedora.testutil.FedoraTestSuiteRunner'
 
+TEST_RUNNER='xmlrunner.extra.djangotestrunner.run_tests'
 try:
-    # use xmlrunner variant if it's installed
+    # use xmlrunner if it's installed; default runner otherwise. download
+    # it from http://github.com/danielfm/unittest-xml-reporting/ to output
+    # test results in JUnit-compatible XML.
     import xmlrunner
-    TEST_RUNNER = 'eulfedora.testutil.FedoraXmlTestSuiteRunner'
+    TEST_RUNNER='xmlrunner.extra.djangotestrunner.run_tests'
     TEST_OUTPUT_DIR='test-results'
-    TEST_OUTPUT_VERBOSE = True
-    TEST_OUTPUT_DESCRIPTIONS = True
+    TEST_OUTPUT_DESCRIPTIONS = False
+    TEST_OUTPUT_VERBOSE = False
 except ImportError:
     pass
 
