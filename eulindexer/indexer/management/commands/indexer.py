@@ -207,6 +207,7 @@ class Command(BaseCommand):
             for index in self.index_settings.itervalues():
                 # pid is the required solr id in the base DigitalObject; assuming people won't change that
                 index.solr_interface.delete({'pid': pid})
+                # TODO: index error if we get a SolrError here
             logger.info('Deleting %s from all configured Solr indexes' % pid)
             # commit?
             
