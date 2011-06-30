@@ -38,7 +38,7 @@ class IndexError(models.Model):
         return '%s (%s) %s' % (self.object_id, self.site, self.time)
 
 
-class IndexerSettings(object):
+class SiteIndex(object):
     def __init__(self, site_url):
         self.site_url = site_url
         self.CMODEL_list = []
@@ -96,12 +96,12 @@ class IndexerSettings(object):
 
 
 def init_configured_indexes():
-    '''Initialize a :class:`IndexerSettings` for each site configured
+    '''Initialize a :class:`SiteIndex` for each site configured
     in Django settings.  Returns a dictionary of site name (matching
     the keys in INDEXER_SITE_URLS) and :class:`IndexerSettings`
     objects.'''
     indexes = {}
     for site, url in settings.INDEXER_SITE_URLS.iteritems():
-        indexes[site] = IndexerSettings(url)
+        indexes[site] = SiteIndex(url)
     return indexes
     

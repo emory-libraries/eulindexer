@@ -89,15 +89,6 @@ class Command(BaseCommand):
                     (self.fedora_server, self.stomp_port))
         self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
 
-<<<<<<< HEAD
-    def init_cmodel_settings(self, *args, **options):
-        self.index_settings = {}
-        for site, url in settings.INDEXER_SITE_URLS.iteritems():
-            self.index_settings[site] = SiteIndex(url)
-
-
-=======
->>>>>>> move logic for loading configured indexes out of indexer command into a common method for re-use
     def handle(self, *args, **options):
         # verbosity should be set by django BaseCommand standard options
         v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
@@ -127,7 +118,6 @@ class Command(BaseCommand):
                                'and  configured correctly')
 
         # body is atom entry... category data includes which  datastream modified when appropriate
-
 
         self.index_settings = init_configured_indexes()
     

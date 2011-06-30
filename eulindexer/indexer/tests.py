@@ -166,7 +166,7 @@ class IndexerTest(TestCase):
                              'to_index queue should be empty when all items are indexed')
 
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_index_item(self):
+    def test_index_item(self, mocksunburnt):
         #Setup some objects
         pid1 = 'indexer-test:test1'
         pid2 = 'indexer-test:test2'
@@ -451,7 +451,7 @@ class TestInitConfiguredIndexes(TestCase):
 
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_init(self):
+    def test_init(self, mocksunburnt):
         # Verify index settings are loaded
         indexes = init_configured_indexes()
         self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
