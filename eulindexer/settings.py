@@ -45,13 +45,13 @@ except NameError:
 del sys
 
 
-TEST_RUNNER='xmlrunner.extra.djangotestrunner.run_tests'
+TEST_RUNNER='xmlrunner.extra.djangotestrunner.XMLTestRunner'
 try:
     # use xmlrunner if it's installed; default runner otherwise. download
     # it from http://github.com/danielfm/unittest-xml-reporting/ to output
     # test results in JUnit-compatible XML.
     import xmlrunner
-    TEST_RUNNER='xmlrunner.extra.djangotestrunner.run_tests'
+    TEST_RUNNER='xmlrunner.extra.djangotestrunner.XMLTestRunner'
     TEST_OUTPUT_DIR='test-results'
     TEST_OUTPUT_DESCRIPTIONS = False
     TEST_OUTPUT_VERBOSE = False
