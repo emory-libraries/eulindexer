@@ -45,7 +45,8 @@ class IndexerTest(TestCase):
     # test the indexer command and its methods here
 
     # django settings we will save for overriding and restoring
-    config_settings = ['INDEXER_SITE_URLS', 'INDEXER_STOMP_SERVER', 'INDEXER_STOMP_PORT']
+    config_settings = ['INDEXER_SITE_URLS', 'INDEXER_STOMP_SERVER', 'INDEXER_STOMP_PORT',
+                       'INDEXER_STOMP_CHANNEL']
 
     def setUp(self):
         self.command = indexer.Command()
@@ -56,6 +57,7 @@ class IndexerTest(TestCase):
         # set values that the tests expect to be present
         settings.INDEXER_STOMP_SERVER = 'localhost'
         settings.INDEXER_STOMP_PORT = '61613'
+        settings.INDEXER_STOMP_CHANNEL = '/topic/foo'
 
     def tearDown(self):
         # restore settings
