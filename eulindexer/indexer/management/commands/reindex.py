@@ -15,7 +15,6 @@
 #   limitations under the License.
 
 from datetime import datetime, timedelta
-import logging
 from optparse import make_option
 from rdflib import URIRef
 from urlparse import urlparse
@@ -24,16 +23,14 @@ from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
 
 from eulfedora.rdfns import model as modelns
-from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
-from django.utils import simplejson
 from eulindexer.indexer.models import init_configured_indexes
 
-
-logger = logging.getLogger(__name__)
-
 class Command(BaseCommand):
+    """Index Fedora objects, specified by pid, against the configured site indexes."""
+    help = __doc__
+    
     args = '<pid pid ...>'
     
     def handle(self, *pids, **options):
@@ -44,6 +41,8 @@ class Command(BaseCommand):
         else:
             verbosity = v_normal
 
+        # complain if no pids are specified?
+
         # load configured site indexes
         # so we can figure out which pids to index where
         self.indexes = init_configured_indexes()
@@ -52,18 +51,46 @@ class Command(BaseCommand):
         self.objs = [self.repo.get_object(pid) for pid in pids]
         self.load_pid_cmodels()
 
+        # loop through the objects and index them
+        self.index_count = 0
+        self.err_count = 0
         for o in self.objs:
             # query the local rdf graph of pids and cmodels to get a list for this object
-            cmodels = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(o.uri),
+            content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(o.uri),
                                                                     predicate=modelns.hasModel)]
-            logger.debug("%s has content models: %s" % (o.pid, ', '.join(cmodels)))
+            
+            # if no content models are found, we can't do anything - report & skip to next item
+            if not content_models:
+                self.stdout.write('Error: no content models found for %s - cannot index\n' % o.pid)
+                continue
+                
+            indexed = False
+            # loop through the configured sites to see which (if any)
+            # the current object should be indexed by
+            for site, index in self.indexes.iteritems():
+                if index.indexes_item(content_models):
+                    try:
+                        indexed = index.index_item(o.pid)
+                        if verbosity > v_normal:
+                            self.stdout.write('Indexed %s (site: %s)\n' % (o.pid, site))
+                    except Exception as e:
+                        # if an error occurs on a single item, report it but keep going
+                        self.stdout.write('Error indexing %s in site %s: %s\n' % \
+                                          (o.pid, site, e))
+                        self.err_count += 1
 
-            for site, index_setting in self.indexes.iteritems():
-                if index_setting.CMODEL_match_check(cmodels):
-                    pass
-                # TODO: move indexer.index_item logic into SiteIndex class for re-use here
+            if indexed:
+                self.index_count += 1
+            else:
+                self.stdout.write('Failed to index %s - none of the configured sites index this item\n' % o.pid)
 
-
+        if verbosity >= v_normal:
+            # report # of items indexed, even if it is zero
+            self.stdout.write('Indexed %d item%s\n' % (self.index_count,
+                                                       '' if self.index_count == 1 else 's'))
+            # if err count is not zero, report it also
+            if self.err_count:
+                self.stdout.write('%d errors on attempts to index\n' % self.err_count)
 
     def load_pid_cmodels(self):
         '''Query the Fedora RIsearch for the content models of all

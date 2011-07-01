@@ -14,7 +14,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-
+from cStringIO import StringIO
 from datetime import timedelta
 from mock import Mock, patch, DEFAULT
 from os import path
@@ -31,7 +31,7 @@ from django.test import Client, TestCase
 from eulfedora.models import DigitalObject, FileDatastream
 from eulfedora.server import Repository
 
-from eulindexer.indexer.management.commands import indexer
+from eulindexer.indexer.management.commands import indexer, reindex
 from eulindexer.indexer.pdf import pdf_to_text
 from eulindexer.indexer.models import SiteIndex, IndexError, \
 	init_configured_indexes, IndexDataReadError
@@ -411,3 +411,83 @@ class TestInitConfiguredIndexes(TestCase):
                          settings.INDEXER_SITE_URLS['site3'])
 
         # solr initialization, etc. is handled by SiteIndex class & tested there
+
+
+class ReindexTest(TestCase):
+    '''Unit tests for the reindex manage command.'''
+
+    def setUp(self):
+        self.command = reindex.Command()
+        self.command.stdout = StringIO()
+
+    def test_load_pid_cmodels(self):
+        pids = ['pid:1', 'pid:2', 'pid:3']
+        repo = Repository()
+        self.command.objs = [repo.get_object(pid) for pid in pids]
+        self.command.repo = Mock()
+        self.command.repo.risearch.find_statements.return_value = 'pid-cmodel-graph'
+        
+        self.command.load_pid_cmodels()
+        self.command.repo.risearch.find_statements.assert_called()
+        # get the query arg to do a little inspection
+        args, kwargs = self.command.repo.risearch.find_statements.call_args
+        query = args[0]
+        # sparql query should include all of the pids specified
+        for pid in pids:
+            self.assert_(pid in query,
+                         'pid %s should be included in risearch cmodel query' % pid)
+        self.assertEqual(self.command.repo.risearch.find_statements.return_value,
+                         self.command.cmodels_graph,
+                         'risearch find_statements result should be stored on manage command as cmodels_graph')
+
+    @patch('eulindexer.indexer.management.commands.reindex.Repository')
+    def test_indexing(self, mockrepo):
+        # test the basic indexing logic of the script
+        indexes = {
+            's1': Mock(SiteIndex),
+            's2': Mock(SiteIndex),
+        }
+        pids = ['pid:a', 'pid:b', 'pid:c']
+        # cmodel graph is initialized by load_pid_cmodels and needs to
+        # return an iterable when queried
+        def set_cmodel_graph():
+            self.command.cmodels_graph = Mock()
+            # set to a non-empty list so items will be indexed
+            self.command.cmodels_graph.objects.return_value = ['foo']
+        self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+        
+        # patch init_configured_indexes to return our mock site indexes
+        with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
+                   new=Mock(return_value=indexes)):
+            # set mock indexes not to index any items 
+            indexes['s1'].indexes_item.return_value = False
+            indexes['s2'].indexes_item.return_value = False
+            self.command.handle(*pids)
+            # nothing indexed, but no errors
+            self.assertEqual(0, self.command.index_count)
+            self.assertEqual(0, self.command.err_count)
+            
+            # set mock index to index all items successfully
+            indexes['s1'].indexes_item.return_value = True
+            indexes['s1'].index_item.return_value = True
+            self.command.handle(*pids)
+            # index count = all items, no errors
+            self.assertEqual(len(pids), self.command.index_count)
+            self.assertEqual(0, self.command.err_count)
+
+            # index all items but fail
+            indexes['s1'].index_item.return_value = False
+            self.command.handle(*pids)
+            # nothing indexed, no items
+            self.assertEqual(0, self.command.index_count)
+            self.assertEqual(0, self.command.err_count)
+
+            # error on attempt to index
+            indexes['s1'].index_item.side_effect = Exception
+            self.command.handle(*pids)
+            # nothing indexed, all errored
+            self.assertEqual(0, self.command.index_count)
+            self.assertEqual(len(pids), self.command.err_count)
+            
+
+
