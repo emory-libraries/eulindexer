@@ -121,11 +121,11 @@ class Command(BaseCommand):
 
         self.index_settings = init_configured_indexes()
     
-        if verbosity > 1:
-            self.stdout.write('Indexing the following content models, solr indexes, and application combinations:')
+        if verbosity > v_normal:
+            self.stdout.write('Indexing the following sites:\n')
             for site, index_setting in self.index_settings.iteritems():
-                # TODO: include site name in output?
-                self.stdout.write('\t%s\t\t[ %s ]\t\t[ %s ]' % (index_setting.CMODEL_list, index_setting.solr_url, index_setting.site_url))
+                self.stdout.write('\t%s\n' % site)
+                self.stdout.write(index_setting.config_summary())
 
         while (True):
             # check if there is a new message, but timeout after 3 seconds so we can process
@@ -189,7 +189,7 @@ class Command(BaseCommand):
         # TODO: better error reporting - should this send an admin email?
         raise CommandError('Failed to reconnect to Fedora after %d retries' % \
                            (retry_count - 1))
-
+    
 
     def process_message(self, pid, method):
         # process an update message from fedora
@@ -211,15 +211,11 @@ class Command(BaseCommand):
             if pid not in self.to_index:
                 # get content models from resource index
                 obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid, modelns.hasModel))
-
-                #UGLY temporary hack. . .
-                #obj_cmodels.remove('info:fedora/fedora-system:FedoraObject-3.0')
-                
-                # includes generic content models
+                # may include generic content models, but should not be a problem
 
                 # check if the content models match one of the object types we are indexing
                 for site, index_setting in self.index_settings.iteritems():
-                    if index_setting.CMODEL_match_check(obj_cmodels):
+                    if index_setting.indexes_item(obj_cmodels):
                         self.to_index[pid] = {'time': datetime.now(), 'site': site, 'tries': 0}
                         break
 

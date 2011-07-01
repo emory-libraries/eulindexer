@@ -41,9 +41,9 @@ class IndexError(models.Model):
 class SiteIndex(object):
     def __init__(self, site_url):
         self.site_url = site_url
-        self.CMODEL_list = []
         self.solr_url = ''
-        self.solr_interface = ''
+        self.solr_interface = None
+        self.content_models = []
         self.load_configuration()
 
     def load_configuration(self):
@@ -63,36 +63,41 @@ class SiteIndex(object):
                 raise
         
         if 'CONTENT_MODELS' in index_config:
-            self.CMODEL_list = index_config['CONTENT_MODELS']
+            # the configuration returns a list of content model lists
+            # convert to a list of sets for easier comparison
+            self.content_models = [set(cm_list) for cm_list in index_config['CONTENT_MODELS']]
 
         # FIXME: is it an error if either/both of these are not present?
 
-        # generate a nice summary of the configuration 
-        summary = 'Loaded index configuration for %s' % self.site_url
+        # log a summary of the configuration of the configuration that was loaded
+        logger.info(self.config_summary())
+
+    def config_summary(self):
+        '''Returns a string summarizing the configuration for this SiteIndex.'''
+        summary = 'Index configuration for %s' % self.site_url
         summary += '\n  Solr url: %s' % self.solr_url
         # list each group of cmodels on one line, so it easier to see how they are grouped
-        summary += '\n  Content Models:\n\t%s' % '\n\t'.join(', '.join(group) for group in self.CMODEL_list)
-        logger.info(summary)
+        summary += '\n  Content Models:\n\t%s' % '\n\t'.join(', '.join(group) for group in self.content_models)
+        return summary
 
-    def CMODEL_match_check(self, list_of_cmodels):
-        match_found = False
+    def indexes_item(self, content_models):
+        '''Check if this :class:`SiteIndex` instance indexes a
+        particular item.  Currently compares by a list of content
+        models.
 
-        #For each list of CMODELs in the overall list
-        for clist in self.CMODEL_list:
-            match_found = True
-            #Get each cmodel from the current list we are looking at.
-            for cmodel in clist:
-                #If that cmodel in this list is not one from the object being looked at, break out and set this one to false.
-                if not cmodel in list_of_cmodels:
-                    match_found = False
-                    break
+        :param content_models: a list of content models for the item
+        :returns: True if the specified content models indicate that
+          the item should be indexed by this SiteIndex; otherwise, False.
+        '''
+        content_models = set(content_models)
+        # check each set of content models
+        for cm_set in self.content_models:
+            # if every content model in our list is included, we want to index it
+            if cm_set.issubset(content_models):
+                return True
 
-            #Nothing that broke the matching, so break out of the main loop/
-            if(match_found):
-                break
-
-
-        return match_found
+        # if no match was found, we don't index this object
+        return False
 
 
 def init_configured_indexes():

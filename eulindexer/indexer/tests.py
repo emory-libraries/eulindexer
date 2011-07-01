@@ -351,72 +351,44 @@ class SiteIndexTest(TestCase):
                 indexer_setting.load_configuration
                 self.assertEqual(site_url, indexer_setting.site_url)
                 self.assertEqual('http://localhost:8983/', indexer_setting.solr_url)
-                self.assertEqual([["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]], indexer_setting.CMODEL_list)
+                self.assertEqual([["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]], indexer_setting.content_models)
                 self.assertEqual('sunburnt_set', indexer_setting.solr_interface)
 
+    # Mock urllib calls to return an empty JSON response
+    mockurllib = Mock(urllib2)
+    mockurllib.urlopen.return_value.read.return_value = '{}'
 
-    def test_cmodel_comparison(self):
-        # Test init & load configuration
-        site_url = 'http://localhost:0001'
-        # Setup an indexer setting
-        mockurllib = Mock(urllib2)
+    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_indexes_item(self, mocksunburnt):
+        index = SiteIndex('test-site-url')
+        # define some content models and sets of cmodels for testing
+        cmodels = {
+            'item': 'info:fedora/test:item',
+            'item-plus': 'info:fedora/test:item-plus',
+            'group': 'info:fedora/test:group',
+            'other': 'info:fedora/test:other',
+        }
+        index.content_models = [
+            set([cmodels['item']]),
+            set([cmodels['item'], cmodels['item-plus']]),
+            set([cmodels['group']]),
+        ]
 
-        #Create a mock sunburnt instance
-        mockSunburntInterface = Mock(sunburnt)
+        # single cmodel in a group
+        self.assertTrue(index.indexes_item([cmodels['item']]))
+        # single cmodel not included anywhere in our sets
+        self.assertFalse(index.indexes_item([cmodels['other']]))
+        # single cmodel - only included with another cmodel, not sufficient by itself
+        self.assertFalse(index.indexes_item([cmodels['item-plus']]))
 
-        
-        # fields and values
-        webservice_data = {}
-        webservice_data['SOLR_URL'] = "http://localhost:8983/"
-        content_top_level = []
+        # two cmodels matching
+        self.assertTrue(index.indexes_item([cmodels['item'], cmodels['item-plus']]))
+        # two cmodels - only one matches
+        self.assertFalse(index.indexes_item([cmodels['item-plus'], cmodels['other']]))
 
-        #1st set of content models
-        content_models = []
-        content_models.append('info:fedora/emory-control:Collection-1.1')
-        content_models.append('info:fedora/emory-control:EuterpeAudio-1.0')
-        content_models.append('info:fedora/emory-control:SomeOtherValue-1.1')
-        content_top_level.append(content_models)
-
-        webservice_data['CONTENT_MODELS'] = content_top_level
-
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = SiteIndex(site_url)
-
-                #Check for only 1 matching
-                self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1"]))
-                self.assertFalse(indexer_setting.CMODEL_match_check(["DOESNOTEXIST-1.1"]))
-
-                #Check for only 2 matching
-                self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1"]))
-
-                #Check for all 3 matching
-                self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
-
-                #Check for superset (3 matching of the 4)
-                self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
-
-        #Add a 2nd set of content models that shares one model
-        content_models = []
-        content_models.append('info:fedora/emory-control:Collection-1.1')
-        content_models.append('info:fedora/emory-control:Rushdie-1.0')
-        content_top_level.append(content_models)
-        webservice_data['CONTENT_MODELS'] = content_top_level
-
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = SiteIndex(site_url)
-
-                #Check for superset (3 matching of the 4) of the 1st set of content models
-                self.assertTrue(indexer_setting.CMODEL_match_check(["DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
-
-                #Check that we have a match for the new set of content models using a superset
-                self.assertTrue(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Rushdie-1.0", "DOESNOTEXIST", "info:fedora/emory-control:Collection-1.1"]))
-
-                #Check for no match with a mixture that comes from both sets but doesn't match a single set
-                self.assertFalse(indexer_setting.CMODEL_match_check(["info:fedora/emory-control:Rushdie-1.0", "info:fedora/emory-control:SomeOtherValue-1.1", "info:fedora/emory-control:EuterpeAudio-1.0"]))
+        # superset - all required cmodels, plus others
+        self.assertTrue(index.indexes_item([cmodels['item'], cmodels['item-plus'], cmodels['other']]))
 
 
 class TestInitConfiguredIndexes(TestCase):
