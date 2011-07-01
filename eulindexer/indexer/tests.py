@@ -34,7 +34,7 @@ from eulfedora.server import Repository
 from eulindexer.indexer.management.commands import indexer
 from eulindexer.indexer.pdf import pdf_to_text
 from eulindexer.indexer.models import SiteIndex, IndexError, \
-	init_configured_indexes
+	init_configured_indexes, IndexDataReadError
 
 from django.utils import simplejson
 from datetime import datetime, timedelta
@@ -127,95 +127,66 @@ class IndexerTest(TestCase):
         # mocking the index_item method to isolate just the process_queue logic
         pid1 = 'indexer-test:test1'
         pid2 = 'indexer-test:test2'
+        site = 'site1'
         index_queue = {        # sample test index queue
-            pid1: {'time': datetime.now(), 'site': 'site1'},
-            pid2: {'time': datetime.now(), 'site': 'site1'}
+            pid1: {'time': datetime.now(), 'site': site},
+            pid2: {'time': datetime.now(), 'site': site}
         }
         self.command.to_index = index_queue.copy()
+        # mock the site index so we can control index success/failure
+        self.command.indexes = {site: Mock(SiteIndex)}
 
-        # no items indexed
-        with patch.object(self.command, 'index_item', new=Mock(return_value=False)):
-            self.command.process_queue()
-            self.assertEqual(index_queue, self.command.to_index,
-                             'to_index queue should remain unchanged when items are not indexed')
+        # configured delay not past - no items indexed
+        self.command.index_delta = timedelta(days=3)
+        self.command.process_queue()
+        self.assertEqual(index_queue, self.command.to_index,
+                         'to_index queue should remain unchanged when items are not indexed')
 
         # all items successfully indexed
-        with patch.object(self.command, 'index_item', new=Mock(return_value=True)):
-            self.command.process_queue()
-            print self.command.to_index
-            self.assertEqual({}, self.command.to_index,
-                             'to_index queue should be empty when all items are indexed')
-
-    @patch('eulindexer.indexer.models.sunburnt')
-    def test_index_item(self, mocksunburnt):
-        #Setup some objects
-        pid1 = 'indexer-test:test1'
-        pid2 = 'indexer-test:test2'
-        self.command.to_index[pid1] = {'time': datetime.now(), 'site': self._INDEXER_SITE_URLS.iterkeys().next() }
-        self.command.to_index[pid2] = {'time': datetime.now()-timedelta(seconds=self.command.index_delay), 'site': self._INDEXER_SITE_URLS.iterkeys().next()}
-
-        #Configure settings
-        webservice_data = {}
-        webservice_data['SOLR_URL'] = "http://localhost:8983/"
-        content_models = []
-        content_models.append(['info:fedora/emory-control:Collection-1.1'])
-        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
-        webservice_data['CONTENT_MODELS'] = content_models
-
-        #Mock out urllib2
-        mockurllib = Mock(urllib2)
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            # TODO: simpler way to set up config for testing ?
-            self.command.indexes = init_configured_indexes()
-
-        #Should be false as has not been adequate time.
-        result = self.command.index_item(pid1)
-        self.assertFalse(result)
-
-        #Configure a response
-        webservice_data = {}
-        webservice_data['pid'] = pid2
-        webservice_data['some_other_value'] = 'sample value'
-
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-
-        with patch('eulindexer.indexer.management.commands.indexer.urllib2', new=mockurllib):
-            result = self.command.index_item(pid2)
-            self.assertTrue(result)
+        # configure delay so all items will be indexed
+        self.command.index_delta = timedelta(days=0)
+        self.command.indexes[site].index_item.return_value = True
+        self.command.process_queue()
+        self.assertEqual({}, self.command.to_index,
+                         'to_index queue should be empty when all items are indexed')
 
     def test_process_queue_error(self):
         # test error logging - generic error (e.g., connection errror or JSON load failure)
         testpid = 'pid:1'
-        testsite = 'testproj'
+        site = 'testproj'
         err_msg = 'Failed to load index data'
-        self.command.to_index = {testpid: {'site': testsite}}
-        
+        self.command.to_index = {testpid: {'site': site, 'time': datetime.now()}}
+        self.command.index_delta = timedelta(seconds=0)
+        self.command.indexes = {site: Mock(SiteIndex)}
+
         # simulate error on index attempt
-        with patch.object(self.command, 'index_item', new=Mock(side_effect=Exception(err_msg))):
-            self.command.process_queue()
+        self.command.indexes[site].index_item.side_effect = Exception(err_msg)
+        self.command.process_queue()
 
         # an IndexError object should have been created for this pid
         indexerr = IndexError.objects.get(object_id=testpid)
-        self.assertEqual(testsite, indexerr.site)
+        self.assertEqual(site, indexerr.site)
         self.assertEqual(err_msg, indexerr.detail,
                          'index error detail should include full exception message')
 
     def test_process_queue_solrerror(self):
         # test error logging - solr error when indexing is attempted
         testpid = 'pid:2'
-        testsite = 'testproj2'
+        site = 'testproj2'
         err_msg = 'Required fields are unspecified: "id"'
-        index_queue = {testpid: {'site': testsite}}
+        index_queue = {testpid: {'site': site, 'time': datetime.now()}}
         self.command.to_index = index_queue.copy()
-        
+        # configure time delay to 0 so indexer will attempt to index
+        self.command.index_delta = timedelta(seconds=0)
+        self.command.indexes = {site: Mock(SiteIndex)}
+
         # simulate Solr error on index attempt
-        with patch.object(self.command, 'index_item', new=Mock(side_effect=SolrError(err_msg))):
-            self.command.process_queue()
+        self.command.indexes[site].index_item.side_effect = SolrError(err_msg)
+        self.command.process_queue()
 
         # an IndexError object should have been created for this pid
         indexerr = IndexError.objects.get(object_id=testpid)
-        self.assertEqual(testsite, indexerr.site)
+        self.assertEqual(site, indexerr.site)
         self.assert_(indexerr.detail.startswith('Solr Error:'),
                      'index error detail should be labeled as a solr error when SolrError is raised')
         self.assert_(indexerr.detail.endswith(err_msg),
@@ -224,33 +195,34 @@ class IndexerTest(TestCase):
     def test_process_queue_recoverableerror(self):
         # test index retries & error logging for a potentially recoverable error
         testpid = 'pid:1'
-        testsite = 'testproj'
+        site = 'testproj'
         err_msg = 'Failed to load index data'
-        self.command.to_index = {testpid: {'site': testsite, 'tries': 0}}
+        self.command.to_index = {testpid: {'site': site, 'tries': 0, 'time': datetime.now()}}
         # configure to only try twice
         self.command.index_max_tries = 2
+        self.command.index_delta = timedelta(seconds=0)
+        self.command.indexes = {site: Mock(SiteIndex)}
 
-        # simulate recoverable error 
-        with patch.object(self.command, 'index_item',
-                          new=Mock(side_effect=indexer.RecoverableIndexError(err_msg))):
-            # first index attempt
-            self.command.process_queue()
-            self.assert_(testpid in self.command.to_index,
-                         'on a recoverable error, pid should still be index queue')
-            self.assertEqual(1, self.command.to_index[testpid]['tries'],
-                             'index attempt count should be tracked in index queue')
-            self.assertEqual(0, IndexError.objects.filter(object_id=testpid).count(),
-                             'recoverable error should not be logged to db on first attempt')
+        # simulate recoverable error
+        self.command.indexes[site].index_item.side_effect = indexer.RecoverableIndexError(err_msg)
+        # first index attempt
+        self.command.process_queue()
+        self.assert_(testpid in self.command.to_index,
+                     'on a recoverable error, pid should still be index queue')
+        self.assertEqual(1, self.command.to_index[testpid]['tries'],
+                         'index attempt count should be tracked in index queue')
+        self.assertEqual(0, IndexError.objects.filter(object_id=testpid).count(),
+                         'recoverable error should not be logged to db on first attempt')
 
-            # second index attempt  (2 tries configured)
-            self.command.process_queue()
-            self.assert_(testpid not in self.command.to_index,
-                         'on a recoverable error after max tries, pid should not be index queue')
-            # when we hit the configured max number of attempts to index, error should be logged in db
-            indexerr = IndexError.objects.get(object_id=testpid)
-            self.assertEqual(testsite, indexerr.site)
-            self.assert_('Failed to index' in indexerr.detail)
-            self.assert_('2 attempts'  in indexerr.detail)
+        # second index attempt  (2 tries configured)
+        self.command.process_queue()
+        self.assert_(testpid not in self.command.to_index,
+                     'on a recoverable error after max tries, pid should not be index queue')
+        # when we hit the configured max number of attempts to index, error should be logged in db
+        indexerr = IndexError.objects.get(object_id=testpid)
+        self.assertEqual(site, indexerr.site)
+        self.assert_('Failed to index' in indexerr.detail)
+        self.assert_('2 attempts'  in indexerr.detail)
 
 
 class TestPdfObject(DigitalObject):
@@ -288,6 +260,9 @@ class PdfToTextTest(TestCase):
         self.assertEqual(self.pdf_text, text)
 
 class SiteIndexTest(TestCase):
+    '''Tests for the SiteIndex object, which wraps the index
+    configuration and indexing logic for a single site.'''
+    
     # Mock urllib calls to return an empty JSON response
     mockurllib = Mock(urllib2)
     mockurllib.urlopen.return_value.read.return_value = '{}'
@@ -355,6 +330,36 @@ class SiteIndexTest(TestCase):
 
         # superset - all required cmodels, plus others
         self.assertTrue(index.indexes_item([cmodels['item'], cmodels['item-plus'], cmodels['other']]))
+
+
+    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_index_item(self, mocksunburnt, mockurllib):
+        # return empty json data for index init/load config
+        mockurllib.urlopen.return_value.read.return_value = '{}'
+        index = SiteIndex('test-site-url')
+        testpid = 'test:abc1'
+        # replace solr interface with a mock we can inspect
+        index.solr_interface = Mock()
+
+        index_data = {'foo': 'bar', 'baz': 'qux'}
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(index_data)
+        indexed = index.index_item(testpid)
+        # solr 'add' should be called with data returned via index data webservice
+        index.solr_interface.add.assert_called_with(index_data)
+        self.assertTrue(indexed, 'index_item should return True on success')
+        
+        # solr error on attempt to add should be re-raised
+        index.solr_interface.add.side_effect = SolrError
+        self.assertRaises(SolrError, index.index_item, testpid)
+
+        # json parse error should also raise an exception
+        mockurllib.urlopen.return_value.read.return_value = 'bogus data that is non-json-parsable '
+        self.assertRaises(Exception, index.index_item, testpid)
+        
+        mockurllib.urlopen.side_effect = Exception
+        # error on attempt to read index data should be raised as a recoverable error
+        self.assertRaises(IndexDataReadError, index.index_item, testpid)
 
 
 class TestInitConfiguredIndexes(TestCase):

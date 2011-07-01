@@ -35,7 +35,7 @@ from eulfedora.server import Repository
 
 from django.utils import simplejson
 from eulindexer.indexer.models import SiteIndex, IndexError, \
-     init_configured_indexes
+     init_configured_indexes, RecoverableIndexError
 
 logger = logging.getLogger(__name__)
 
@@ -230,8 +230,12 @@ class Command(BaseCommand):
             queue_remove = []	
             for pid in self.to_index.iterkeys():
                 try:
-                    if self.index_item(pid):   # returns True on successful index
-                        queue_remove.append(pid)
+                    # if we've waited the configured delay time, attempt to index
+                    if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
+                        logger.debug('Triggering index for %s' % pid)
+                        # tell the site index to index the item - returns True on success
+                        if self.indexes[self.to_index[pid]['site']].index_item(pid):
+                            queue_remove.append(pid)
                         
                 except RecoverableIndexError as rie:
                     # If the index attempt resulted in error that we
@@ -284,70 +288,4 @@ class Command(BaseCommand):
             # errored from the list of objects still to be indexed
             for pid in queue_remove:
                 del self.to_index[pid]
-                
-
-    def index_item(self, pid):
-        '''Attempt to index an item that has been queued for
-        indexing. If this fails, kick up an error to eventually handle
-        so that processing does not stop for other items.
-
-        :param pid - the pid of the object to index; expected to be a
-	        key in in the current :attr:`to_index` queue.
-        '''
-
-        # if we've waited the configured delay time, go ahead and index
-        # TODO: should this be a celery task?
-        if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
-            logger.info('Triggering index for %s' % pid)	# debug maybe?
-            index = self.indexes[self.to_index[pid]['site']]
-            indexdata_url = index.site_url + pid
-            logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
-            try:
-                # FIXME: depends on trailing slash
-                response = urllib2.urlopen(indexdata_url)
-                json_value = response.read()
-            except Exception as connection_error:
-                logger.error('Error connecting to %s for %s: %s' % \
-                                 (indexdata_url, pid, connection_error))
-                # wrap exception and add more detail about what went wrong for db error log
-                raise IndexDataReadError('Failed to load index data for %s from %s : %s' % \
-                                (pid, indexdata_url, connection_error))
-
-            # it's possible we get data back but it can't be parsed as JSON
-            try:
-                index_data = simplejson.loads(json_value)
-            except ValueError:
-                raise Exception('Could not load index data for %s as JSON: %s' % \
-                                (pid, json_value))
-        
-            try:
-                index.solr_interface.add(index_data)
-                #TODO: Pool updates of similar content items to reduce commits?
-                # or, better - configure solr to handle according to application needs
-                index.solr_interface.commit()
-            except SolrError as se:
-                logger.error('Error indexing for %s: %s' % (pid, se))
-                raise
-                # possible errors: status 404 - solr not running/path incorrectly configured
-                # schema error prints nicely, 404 is ugly...
-
-            #Return that item was indeed processed.
-            return True
-
-        #Item not processed due to time likely, return false.
-        else:
-            return False
-            
-
-
-class RecoverableIndexError(Exception):
-    '''Custom Exception wrapper class for an index errors where a
-    recovery is possible and the index should be retried.'''
-    pass
-
-class IndexDataReadError(RecoverableIndexError):
-    '''Custom exception for failure to retrieve the index data for an item; should be considered
-    as possibly recoverable, since the site may be temporarily available.'''
-    pass
-
-
+                            
