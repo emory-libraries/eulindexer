@@ -116,11 +116,11 @@ class IndexerTest(TestCase):
         indexconfig2 = Mock(SiteIndex)
         indexconfig2.solr_url = "http://different.solr:port/core2"
         indexconfig2.solr_interface = mocksunburnt
-        self.command.index_settings = {
+        self.command.indexes = {
             'site1': indexconfig1,
             'site2': indexconfig2,
             }
-        #index_count = len(self.command.index_settings)
+        #index_count = len(self.command.indexes)
         #self.assertEqual(index_count, mocksunburnt.SolrInterface.call_count, 'one solr connection should be initialized for each connection')
 
         # check that both solr configurations were used
@@ -186,7 +186,7 @@ class IndexerTest(TestCase):
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
         with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
             # TODO: simpler way to set up config for testing ?
-            self.command.index_settings = init_configured_indexes()
+            self.command.indexes = init_configured_indexes()
 
         #Should be false as has not been adequate time.
         result = self.command.index_item(pid1)
@@ -307,56 +307,41 @@ class PdfToTextTest(TestCase):
         self.assertEqual(self.pdf_text, text)
 
 class SiteIndexTest(TestCase):
-
-    def test_init(self):
-        # Test init & load configuration
-        site_url = 'http://localhost:0001'
-
-        #Create a mock sunburnt instance
-        mockSunburntInterface = Mock(sunburnt)
-        mockSunburntInterface.SolrInterface.return_value = 'sunburnt_set'
-
-        # mock urrlib to return json index config data
-        mockurllib = Mock(urllib2)
-        # empty response
-        mockurllib.urlopen.return_value.read.return_value = '{}'
-
-        #This will fail as sunburnt won't be reachable.
-        #with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            #indexer_setting = SiteIndex(site_url)
-            #self.assertRaises(RelativeURIError, indexer_setting.load_configuration)
-
-        # fields but no values
-        webservice_data = {}
-        webservice_data['SOLR_URL'] = ""
-        webservice_data['CONTENT_MODELS'] = ""
-
-        #This will fail as sunburnt won't be reachable.
-        #mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-        #with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            #indexer_setting = SiteIndex(site_url)
-            #self.assertRaises(RelativeURIError, indexer_setting.load_configuration)
-
-        # fields and values
-        webservice_data['SOLR_URL'] = "http://localhost:8983/"
-        content_models = []
-        content_models.append(['info:fedora/emory-control:Collection-1.1'])
-        content_models.append(['info:fedora/emory-control:EuterpeAudio-1.0'])
-        webservice_data['CONTENT_MODELS'] = content_models
-
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(webservice_data)
-        with patch('eulindexer.indexer.models.urllib2', new=mockurllib):
-            with patch('eulindexer.indexer.models.sunburnt', new=mockSunburntInterface):
-                indexer_setting = SiteIndex(site_url)
-                indexer_setting.load_configuration
-                self.assertEqual(site_url, indexer_setting.site_url)
-                self.assertEqual('http://localhost:8983/', indexer_setting.solr_url)
-                self.assertEqual([["info:fedora/emory-control:Collection-1.1"], ["info:fedora/emory-control:EuterpeAudio-1.0"]], indexer_setting.content_models)
-                self.assertEqual('sunburnt_set', indexer_setting.solr_interface)
-
     # Mock urllib calls to return an empty JSON response
     mockurllib = Mock(urllib2)
     mockurllib.urlopen.return_value.read.return_value = '{}'
+
+    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_init(self, mocksunburnt, mockurllib):
+        # Test init & load configuration
+        site_url = 'http://localhost:0001'
+        mocksunburnt.SolrInterface.return_value = 'solr interface'
+
+        # could also simulate urrlib and sunburnt connection errors
+        # to test error handling
+        
+        # set sample fields and values to be returned from mock url call
+        index_config = {
+            'SOLR_URL': "http://localhost:8983/",
+            'CONTENT_MODELS': [
+                ['info:fedora/emory-control:Collection-1.1'],
+                ['info:fedora/emory-control:EuterpeAudio-1.0']
+            ]
+        }
+        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(index_config)
+        index = SiteIndex(site_url)
+        self.assertEqual(site_url, index.site_url)
+        mockurllib.urlopen.assert_called_with(site_url)
+        self.assertEqual(index_config['SOLR_URL'], index.solr_url,
+                         'SiteIndex solr url should be configured based on data returned from url call')
+        for cmodel_group in index_config['CONTENT_MODELS']:
+            self.assert_(set(cmodel_group) in index.content_models,
+                         'each group of content models from indexdata should be present in SiteIndex content models')
+
+        mocksunburnt.SolrInterface.assert_called_with(index_config['SOLR_URL'])
+        self.assertEqual('solr interface', index.solr_interface)
+
 
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')

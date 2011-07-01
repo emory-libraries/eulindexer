@@ -119,13 +119,13 @@ class Command(BaseCommand):
 
         # body is atom entry... category data includes which  datastream modified when appropriate
 
-        self.index_settings = init_configured_indexes()
+        self.indexes = init_configured_indexes()
     
         if verbosity > v_normal:
             self.stdout.write('Indexing the following sites:\n')
-            for site, index_setting in self.index_settings.iteritems():
+            for site, index in self.indexes.iteritems():
                 self.stdout.write('\t%s\n' % site)
-                self.stdout.write(index_setting.config_summary())
+                self.stdout.write(index.config_summary())
 
         while (True):
             # check if there is a new message, but timeout after 3 seconds so we can process
@@ -198,7 +198,7 @@ class Command(BaseCommand):
         if method == 'purgeObject':
             # since we don't know which index (if any) this object was indexed in,
             # delete it from all configured indexes
-            for index in self.index_settings.itervalues():
+            for index in self.indexes.itervalues():
                 # pid is the required solr id in the base DigitalObject; assuming people won't change that
                 index.solr_interface.delete({'pid': pid})
                 # TODO: index error if we get a SolrError here
@@ -214,8 +214,8 @@ class Command(BaseCommand):
                 # may include generic content models, but should not be a problem
 
                 # check if the content models match one of the object types we are indexing
-                for site, index_setting in self.index_settings.iteritems():
-                    if index_setting.indexes_item(obj_cmodels):
+                for site, index in self.indexes.iteritems():
+                    if index.indexes_item(obj_cmodels):
                         self.to_index[pid] = {'time': datetime.now(), 'site': site, 'tries': 0}
                         break
 
@@ -299,8 +299,8 @@ class Command(BaseCommand):
         # TODO: should this be a celery task?
         if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
             logger.info('Triggering index for %s' % pid)	# debug maybe?
-            index_config = self.index_settings[self.to_index[pid]['site']]
-            indexdata_url = index_config.site_url + pid
+            index = self.indexes[self.to_index[pid]['site']]
+            indexdata_url = index.site_url + pid
             logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
             try:
                 # FIXME: depends on trailing slash
@@ -321,10 +321,10 @@ class Command(BaseCommand):
                                 (pid, json_value))
         
             try:
-                index_config.solr_interface.add(index_data)
+                index.solr_interface.add(index_data)
                 #TODO: Pool updates of similar content items to reduce commits?
                 # or, better - configure solr to handle according to application needs
-                index_config.solr_interface.commit()
+                index.solr_interface.commit()
             except SolrError as se:
                 logger.error('Error indexing for %s: %s' % (pid, se))
                 raise
