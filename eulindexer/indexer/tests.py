@@ -44,17 +44,28 @@ class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
     # test the indexer command and its methods here
 
+    # django settings we will save for overriding and restoring
+    config_settings = ['INDEXER_SITE_URLS', 'INDEXER_STOMP_SERVER', 'INDEXER_STOMP_PORT']
+
     def setUp(self):
         self.command = indexer.Command()
-        # store real configuration for sites to be indexed
-        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
+        # store configurations tests may modify or add
+        for cfg in self.config_settings:
+            setattr(self, '_%s' % cfg, getattr(settings, cfg, None))
+
+        # set values that the tests expect to be present
+        settings.INDEXER_STOMP_SERVER = 'localhost'
+        settings.INDEXER_STOMP_PORT = '61613'
 
     def tearDown(self):
-        # restore index site configuration
-        if self._INDEXER_SITE_URLS is None:
-            delattr(settings, 'INDEXER_SITE_URLS')
-        else:
-            settings.INDEXER_SITE_URLS = self._INDEXER_SITE_URLS
+        # restore settings
+        for cfg in self.config_settings:
+            original_value = getattr(self, '_%s' % cfg)
+            if original_value is None:
+                delattr(settings, cfg)
+            else:
+                setattr(settings, cfg, original_value)
+            
 
     def test_startup_error(self):
         # simulate a socket error (fedora not running/configured properly)
