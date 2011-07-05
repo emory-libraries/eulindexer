@@ -374,6 +374,30 @@ class SiteIndexTest(TestCase):
         # error on attempt to read index data should be raised as a recoverable error
         self.assertRaises(IndexDataReadError, index.index_item, testpid)
 
+    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_distinct_cmodels(self, mocksunburnt):
+        index = SiteIndex('http://foo/index')
+        cmodels = {
+            'coll': 'info:fedora/emory-control:Collection-1.1',
+            'audio': 'info:fedora/emory-control:EuterpeAudio-1.0',
+            'item': 'info:fedora/emory-control:Item-1.0',
+        }
+        # set some content model combinations for testing
+        index.content_models =  [
+            set([cmodels['coll']]),
+            set([cmodels['audio']]),
+            set([cmodels['coll'], cmodels['audio']]),
+            set([cmodels['item']]),
+            set([cmodels['audio'], cmodels['item']])
+        ]
+        distinct_cmodels = index.distinct_content_models()
+        # each cmodel should be included once and only once
+        self.assert_(cmodels['coll'] in distinct_cmodels)
+        self.assert_(cmodels['audio'] in distinct_cmodels)
+        self.assert_(cmodels['item'] in distinct_cmodels)
+        self.assertEqual(len(cmodels.keys()), len(distinct_cmodels))
+
 
 class TestInitConfiguredIndexes(TestCase):
 
@@ -408,7 +432,7 @@ class TestInitConfiguredIndexes(TestCase):
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')
     def test_init(self, mocksunburnt):
-        # Verify index settings are loaded
+       # Verify index settings are loaded
         indexes = init_configured_indexes()
         self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
                          len(indexes.keys()),
@@ -425,27 +449,41 @@ class TestInitConfiguredIndexes(TestCase):
 
         # solr initialization, etc. is handled by SiteIndex class & tested there
 
-
 class ReindexTest(TestCase):
     '''Unit tests for the reindex manage command.'''
 
     def setUp(self):
+        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
+        # set some test site configs before initializing command
+        settings.INDEXER_SITE_URLS = {
+            's1': 'http://ess.one',
+            's2': 'http://ess.two',
+        }
         self.command = reindex.Command()
         self.command.stdout = StringIO()
+
+
+    def tearDown(self):
+        if self._INDEXER_SITE_URLS is not None:
+            setattr(settings, 'INDEXER_SITE_URLS', self._INDEXER_SITE_URLS)
+        else:
+            delattr(settings, 'INDEXER_SITE_URLS')
 
     def test_load_pid_cmodels(self):
         pids = ['pid:1', 'pid:2', 'pid:3']
         repo = Repository()
-        self.command.objs = [repo.get_object(pid) for pid in pids]
+        # use a mock repo, but replace get_object with the real thing (for obj uris)
         self.command.repo = Mock()
+        self.command.repo.get_object = repo.get_object
         self.command.repo.risearch.find_statements.return_value = 'pid-cmodel-graph'
-        
-        self.command.load_pid_cmodels()
+
+        # load pid cmodels with a list of pids
+        self.command.load_pid_cmodels(pids=pids)
         self.command.repo.risearch.find_statements.assert_called()
         # get the query arg to do a little inspection
         args, kwargs = self.command.repo.risearch.find_statements.call_args
         query = args[0]
-        # sparql query should include all of the pids specified
+        # sparql query should filter on all of the pids specified
         for pid in pids:
             self.assert_(pid in query,
                          'pid %s should be included in risearch cmodel query' % pid)
@@ -453,17 +491,32 @@ class ReindexTest(TestCase):
                          self.command.cmodels_graph,
                          'risearch find_statements result should be stored on manage command as cmodels_graph')
 
+        # load pid cmodels with a list of cmodels
+        content_models = ['foo:cm1', 'bar:cm2', 'baz:cm3']
+        self.command.load_pid_cmodels(content_models=content_models)
+        self.command.repo.risearch.find_statements.assert_called()
+        # get the query arg to do a little inspection
+        args, kwargs = self.command.repo.risearch.find_statements.call_args
+        query = args[0]
+        # sparql query should filter on all of the content models specified 
+        for cm in content_models:
+            self.assert_(cm in query,
+                         'content model %s should be included in risearch cmodel query' % cm)
+        self.assertEqual(self.command.repo.risearch.find_statements.return_value,
+                         self.command.cmodels_graph,
+                         'risearch find_statements result should be stored on manage command as cmodels_graph')
+
+    def test_index_noargs(self):
+        # reindex script will error if nothing is specified for indexing (no pids or site)
+        self.assertRaises(CommandError, self.command.handle)
+
     @patch('eulindexer.indexer.management.commands.reindex.Repository')
-    def test_indexing(self, mockrepo):
-        # test the basic indexing logic of the script
-        indexes = {
-            's1': Mock(SiteIndex),
-            's2': Mock(SiteIndex),
-        }
+    def test_index_by_pid(self, mockrepo, mocksettings):
+
         pids = ['pid:a', 'pid:b', 'pid:c']
         # cmodel graph is initialized by load_pid_cmodels and needs to
         # return an iterable when queried
-        def set_cmodel_graph():
+        def set_cmodel_graph(*args, **kwargs):
             self.command.cmodels_graph = Mock()
             # set to a non-empty list so items will be indexed
             self.command.cmodels_graph.objects.return_value = ['foo']
@@ -501,6 +554,40 @@ class ReindexTest(TestCase):
             # nothing indexed, all errored
             self.assertEqual(0, self.command.index_count)
             self.assertEqual(len(pids), self.command.err_count)
-            
+
+    @patch('eulindexer.indexer.management.commands.reindex.Repository')
+    def test_index_by_site(self, mockrepo):
+        # test the basic indexing logic of the script - index a configured site
+        
+        # cmodel graph is initialized by load_pid_cmodels and needs to
+        # return an iterable when queried
+        def set_cmodel_graph(*args, **kwargs):
+            self.command.cmodels_graph = Mock()
+            # set to a non-empty list so items will be indexed
+            self.command.cmodels_graph.objects.return_value = ['foo']
+        self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+        # set test pids to be indexed
+        testpids = ['pid:1', 'pid:2', 'pid:3']
+        self.command.pids_from_graph = Mock(return_value=testpids)
+
+        # create a mock site index object
+        mocksiteindex = Mock(SiteIndex)
+        mocksiteindex.distinct_content_models.return_value = ['cmodel:1', 'cmodel:2']
+        # indexes any item it is asked about
+        mocksiteindex.indexes_item.return_value = True
+        # indexes everything successfully
+        mocksiteindex.index_item.return_value = True
+        
+        with patch('eulindexer.indexer.management.commands.reindex.SiteIndex',
+                   Mock(return_value=mocksiteindex)):
+            self.command.handle(site='s1')
+            # all pids indexed, no errors
+            self.assertEqual(len(testpids), self.command.index_count)
+            self.assertEqual(0, self.command.err_count)
+            self.assertEqual(1, len(self.command.indexes.keys()),
+                             'only the required site configuration is loaded when indexing a single site')
+            self.assert_('s1' in self.command.indexes)
+
+
 
 

@@ -99,6 +99,14 @@ class SiteIndex(object):
         # if no match was found, we don't index this object
         return False
 
+    def distinct_content_models(self):
+        '''Return a distinct list of all content models that are part of
+        any combination of content indexed by this site.'''
+        all_cmodels = set()
+        for cm in self.content_models:
+            all_cmodels |= cm
+        return all_cmodels
+
     def index_item(self, pid):
         '''Actually index an item - request the indexdata from the
         associated site url and update the configured Solr interface.
@@ -113,7 +121,7 @@ class SiteIndex(object):
 	        key in in the current :attr:`to_index` queue.
         :returns: True when indexing completes successfully
         '''
-        indexdata_url = '%s/%s' % (self.site_url.rstrip('/'), pid)
+        indexdata_url = '%s/%s/' % (self.site_url.rstrip('/'), pid)
         logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
 
         try:
@@ -154,7 +162,6 @@ def init_configured_indexes():
     for site, url in settings.INDEXER_SITE_URLS.iteritems():
         indexes[site] = SiteIndex(url)
     return indexes
-
 
 
 class RecoverableIndexError(Exception):

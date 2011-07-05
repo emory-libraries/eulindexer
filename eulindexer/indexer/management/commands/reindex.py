@@ -25,14 +25,21 @@ from django.conf import settings
 from eulfedora.rdfns import model as modelns
 from eulfedora.server import Repository
 
-from eulindexer.indexer.models import init_configured_indexes
+from eulindexer.indexer.models import init_configured_indexes, SiteIndex
 
 class Command(BaseCommand):
     """Index Fedora objects, specified by pid, against the configured site indexes."""
     help = __doc__
     
     args = '<pid pid ...>'
-    
+
+    option_list = BaseCommand.option_list + (
+        make_option('-s', '--site', type='choice', dest='site',
+                    choices=settings.INDEXER_SITE_URLS.keys(),
+                    help='Index all objects that belong to a configured site [choices: ' +
+                         ','.join(settings.INDEXER_SITE_URLS.keys()) + ']'),
+    )
+
     def handle(self, *pids, **options):
         # verbosity should be set by django BaseCommand standard options
         v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
@@ -41,27 +48,54 @@ class Command(BaseCommand):
         else:
             verbosity = v_normal
 
-        # complain if no pids are specified?
 
-        # load configured site indexes
-        # so we can figure out which pids to index where
-        self.indexes = init_configured_indexes()
-        
+        # initialize repository connection - used in either mode
         self.repo = Repository()
-        self.objs = [self.repo.get_object(pid) for pid in pids]
-        self.load_pid_cmodels()
+
+        # check if site is set in options - indexing all objects for a single site
+        if 'site' in options and options['site']:
+            site = options['site']
+            # only load the configuration for the one site we are interested in
+            if verbosity > v_normal:
+                self.stdout.write('Loading index configuration for %s' % site)
+            self.indexes = {
+                site: SiteIndex(settings.INDEXER_SITE_URLS[site])
+            }
+            # Query fedora risearch for all objects with any of the
+            # content models this site cares about.  If a site
+            # requires a combination of content models, this may
+            # return extra objects, but they will be ignored at index time.
+            self.content_models = self.indexes[site].distinct_content_models()
+            self.stdout.write('Querying Fedora for objects with content models:\n %s\n' % \
+                              ', '.join(self.content_models))
+            self.load_pid_cmodels(content_models=self.content_models)
+            # set pids to be indexed based on the risearch query result
+            self.pids = self.pids_from_graph()
+
+        # a list of pids to index, from an unknown site 
+        elif pids:
+            # load configured site indexes so we can figure out which pids to index where
+            self.indexes = init_configured_indexes()
+            self.pids = pids
+            self.load_pid_cmodels(pids=pids)
+
+        # no site, no pids - nothing to index
+        else:	
+            raise CommandError('Neither site nor pids were specified.  Nothing to index.')
+
 
         # loop through the objects and index them
         self.index_count = 0
         self.err_count = 0
-        for o in self.objs:
+        for pid in self.pids:
+            obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
-            content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(o.uri),
+            content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(obj.uri),
                                                                     predicate=modelns.hasModel)]
             
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
-                self.stdout.write('Error: no content models found for %s - cannot index\n' % o.pid)
+                self.stdout.write('Error: no content models found for %s - cannot index\n' % obj.pid)
                 continue
                 
             indexed = False
@@ -70,19 +104,25 @@ class Command(BaseCommand):
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
                     try:
-                        indexed = index.index_item(o.pid)
+                        indexed = index.index_item(obj.pid)
                         if verbosity > v_normal:
-                            self.stdout.write('Indexed %s (site: %s)\n' % (o.pid, site))
+                            # if site was specified as an argument, don't report it for each item
+                            if options['site']:
+                                site_detail = ''
+                            else:
+                                site_detail = '(site: %s)' % site
+                            self.stdout.write('Indexed %s %s\n' % (obj.pid, site_detail))
                     except Exception as e:
                         # if an error occurs on a single item, report it but keep going
                         self.stdout.write('Error indexing %s in site %s: %s\n' % \
-                                          (o.pid, site, e))
+                                          (obj.pid, site, e))
                         self.err_count += 1
 
             if indexed:
                 self.index_count += 1
             else:
-                self.stdout.write('Failed to index %s - none of the configured sites index this item\n' % o.pid)
+                self.stdout.write('Failed to index %s - none of the configured sites index this item\n'
+                                  % obj.pid)
 
         if verbosity >= v_normal:
             # report # of items indexed, even if it is zero
@@ -92,22 +132,49 @@ class Command(BaseCommand):
             if self.err_count:
                 self.stdout.write('%d errors on attempts to index\n' % self.err_count)
 
-    def load_pid_cmodels(self):
-        '''Query the Fedora RIsearch for the content models of all
-        pids that are being reindexed.  Stores the result as an RDF
-        graph so it can be queried by object.
+    def load_pid_cmodels(self, pids=None, content_models=None):
+        '''Query the Fedora RIsearch for the pids and content models
+        to be indexed.  Stores the result as an RDF graph so it can be
+        queried by object.
+
+        This method has two basic modes of operation: if a list of
+        pids are specified, it queries the RIsearch for the content
+        models for only the objects corresponding to those pids.  When
+        given a list of content models, it will query for all objects
+        with any of the content models.
+
+        :param pids: list of pids - query will be filtered to include
+            only the specified pids.
+        :param content_models: list of content models - query will
+            find all pids with any of the specified content models
         '''
+        if pids is not None:
+            objs = [self.repo.get_object(pid) for pid in pids]
+            query_filter =  ' || '.join('?pid = <%s>' % o.uri for o in objs)
+            
+        elif content_models is not None:
+            query_filter =  ' || '.join('?cmodel = <%s>' % cm for cm in content_models)
+        
         query = '''CONSTRUCT   { ?pid <%(has_model)s> ?cmodel }
         WHERE {
            ?pid <%(has_model)s> ?cmodel
-           FILTER ( %(pidlist)s )
+           FILTER ( %(filter)s )
         }
         ''' % {
            'has_model': modelns.hasModel,
-           'pidlist': ' || '.join('?pid = <%s>' % o.uri for o in self.objs)
+     	   'filter': query_filter
         }
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
+
+    def pids_from_graph(self):
+        '''Generator of pids based on the Content Model RDF graph.
+        Intended for use in Site indexing mode, when the cmodel graph
+        should be populated with pid and content model information for
+        objects with any content models the site indexes.'''
+        for subj in self.cmodels_graph.subjects(predicate=modelns.hasModel):
+            # convert from URIRef to string 
+            yield str(subj)
 
 
 
