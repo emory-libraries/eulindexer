@@ -511,7 +511,7 @@ class ReindexTest(TestCase):
         self.assertRaises(CommandError, self.command.handle)
 
     @patch('eulindexer.indexer.management.commands.reindex.Repository')
-    def test_index_by_pid(self, mockrepo, mocksettings):
+    def test_index_by_pid(self, mockrepo):
 
         pids = ['pid:a', 'pid:b', 'pid:c']
         # cmodel graph is initialized by load_pid_cmodels and needs to
@@ -521,6 +521,13 @@ class ReindexTest(TestCase):
             # set to a non-empty list so items will be indexed
             self.command.cmodels_graph.objects.return_value = ['foo']
         self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+
+        indexconfig1 = Mock()
+        indexconfig2 = Mock()
+        indexes = {
+            's1': indexconfig1,
+            's2': indexconfig2
+        }
         
         # patch init_configured_indexes to return our mock site indexes
         with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
