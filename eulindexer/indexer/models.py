@@ -20,7 +20,7 @@ import urllib2
 from django.conf import settings
 from django.db import models
 from django.utils import simplejson
-
+from httplib2 import iri2uri
 from sunburnt import sunburnt, SolrError
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,21 @@ class SiteIndex(object):
         logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
         
         if 'SOLR_URL' in index_config:
-            self.solr_url = index_config['SOLR_URL']
+            solr_url = index_config['SOLR_URL']
+            # work around weirdness in sunburnt or httplib (not sure which).
+            # sunburnt (as of 0.5) utf8 encodes index data, but if you pass
+            # it a unicode url then it passes that unicode straight through
+            # to httplib. when httplib tries to concatenate the unicode url
+            # with string index data, python coerces the index data into a
+            # unicode object, assumes it's ascii, and throws an exception
+            # when it's not. the upshot is that if you pass sunburnt a
+            # unicode url, you can't have unicode index data. our solr url
+            # comes from a json object and is thus always represented as a
+            # unicode object. coerce it into a string (by way of iri2uri in
+            # case there are actual non-ascii chars in the iri) so that we
+            # can include unicode in our index data.
+            solr_url = str(iri2uri(solr_url))
+            self.solr_url = solr_url
 
             # Instantiate a connection to this solr instance.
             try:
