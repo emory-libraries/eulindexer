@@ -155,7 +155,19 @@ with a list:
 PDF Text Stripping Support
 --------------------------
 
+There is currently prototype support in EULIndexer for getting the text out
+of PDFs. This can be useful to allow for searching on the content of
+the PDF within a SOLR index. To do this, simply include the following
+in a project that intends to return the content from a PDF:
 
+from eulindexer.indexer.pdf import pdf_to_text
+
+To use on a file, the syntax is:
+  text = pdf_to_text(open(pdf_filepath, 'rb'))
+
+To use on a datastream from EULFedora, the syntax is:
+  pdfobj = repository.get_object(pid)
+  text = pdf_to_text(pdfobj.pdf.content)
 
 
 Dependencies
