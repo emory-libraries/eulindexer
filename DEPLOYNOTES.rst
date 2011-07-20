@@ -81,6 +81,11 @@ To learn more about SOLR, please visit: http://lucene.apache.org/solr/ . Sample
 documentation of our infrastructure install with Fedora can be found at:
 `Emory Libraries TechKnowHow <https://techknowhow.library.emory.edu/fedora-commons/fedora-install-notes>`_
 
+Please note that a SOLR schema is required for data to be processed and EULIndexer 
+assumes that schema is named "schema.xml" within the SOLR instance. A sample simple
+SOLR Schema is planned to be added to this project in the future, but please
+refer to the SOLR Documentation in the meantime on creating / modifying one.
+
 Install the Application
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -94,26 +99,12 @@ need to be specified for some unit tests to currently work.
 Running The Application
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-To use the indexer, from the directory with manage.py, do:
+Please see the documentation under the README.rst.
 
-  $ python manage.py indexer
+Reindexing individual PIDs or an entire Site
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Available options that can be specified are as follows:
-  
-  --max-reconnect-retries
-      This is a numeric entry that specifies how many times to try to reconnect
-      to Fedora if the connection is lost. The current default is: 5.
-
-  --retry-reconnect-wait
-      This is a numeric entry that specifies the wait time between Fedora connection
-      retry attempts. The current default is: 5.
-
-  --index-max-tries
-      This is the maximum amount of times the indexer will attempt to reindex an item
-      before giving up on it and logging an error. Retrying a failed object is useful
-      when an application that handles that object's index is restarting. The current 
-      default is: 3.
-
+Please see the documentation under the README.rst.
 
 
 Future Release Documentation
