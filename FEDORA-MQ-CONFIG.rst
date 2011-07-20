@@ -7,6 +7,16 @@ that service's queues for updates and respond to them in custom-defined
 ways. This document describes the Fedora configuration necessary for this
 indexer project to communicate with it.
 
+Install Spring
+-------------
+
+For our Production installation, we have installed Spring as part of
+enabling this service. We are using Spring Framework 3.1.0.M1 which
+can be downloaded from: http://www.springsource.org/download
+
+Once downloaded and extracted, run the following copy command:
+cp <extracted_directory>/spring-framework-3.1.0.M1/dist/org.springframework* <fedora_home>/tomcat/webapps/fedora/WEB-INF/lib/
+
 Configure STOMP
 ---------------
 
