@@ -40,7 +40,8 @@ from eulindexer.indexer.models import SiteIndex, IndexError, \
 logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
-
+    """Service that listens for Fedora STOMP updates and processes those objects
+       against the configured site indexes."""
     to_index = {}
     # delay before indexing
     # - since an object may be updated by several API calls in sequence, delay a bit

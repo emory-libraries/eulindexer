@@ -50,13 +50,13 @@ are any errors, pip should announce them very loudly.
 
 To install python dependencies, cd into the repository checkout and::
 
-  $ pip install -r pip-dependencies
+  $ pip install -r pip-install-req.txt
 
 If you are a developer or are installing to a continuous ingration server
 where you plan to run unit tests, code coverage reports, or build sphinx
 documentation, you probably will also want to::
 
-  $ pip install -r build-dependencies
+  $ pip install -r pip-dev-req.txt
 
 After this step, your virtual environment should contain all of the
 dependencies for EULIndexer.
@@ -83,8 +83,8 @@ documentation of our infrastructure install with Fedora can be found at:
 
 Please note that a SOLR schema is required for data to be processed and EULIndexer 
 assumes that schema is named "schema.xml" within the SOLR instance. A sample simple
-SOLR Schema is planned to be added to this project in the future, but please
-refer to the SOLR Documentation in the meantime on creating / modifying one.
+SOLR Schema is located in the indexdata directory of `EULfedora <https://github.com/emory-libraries/eulfedora>`_
+as the name "sample-solr-schema.xml" (which would naturally need to be renamed "schema.xml" to be used).
 
 Install the Application
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -105,29 +105,3 @@ Reindexing individual PIDs or an entire Site
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Please see the documentation under the README.rst.
-
-
-Future Release Documentation
-----------------------------
-
-The following directions are things that are not ready to be done yet. As such,
-the following section should be ignored for the time being.
-
-Remove Old Rushdie Gsearch Configuration
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-1. Under <fedora_home>/tomcat/webapps/fedoragsearch/WEB-INF/classes/config, edit fedoragsearch.properties
-    a. Find the text: fedoragsearch.indexNames
-    b. Remove the "RushdieSolr" entry.
-
-2. Under <fedora_home>/tomcat/webapps/fedoragsearch/WEB-INF/classes/config/index
-    a. Remove the RushdieSolr directory.
-
-3. Shutdown fedora.
-
-4. Shutdown Solr.
-
-5. Under <fedora_home>/gsearch/solr/ssl-multicore/rushdie/
-    a. Remove the data directory.
-
-6. Restart Solr and Fedora.

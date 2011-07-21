@@ -1,0 +1,5 @@
+Requirement already satisfied (use --upgrade to upgrade): sphinx in /usr/local/lib/python2.6/dist-packages/Sphinx-1.0.4-py2.6.egg
+Requirement already satisfied (use --upgrade to upgrade): Pygments>=0.8 in /usr/local/lib/python2.6/dist-packages/Pygments-1.3.1-py2.6.egg (from sphinx)
+Requirement already satisfied (use --upgrade to upgrade): Jinja2>=2.2 in /usr/local/lib/python2.6/dist-packages/Jinja2-2.5.2-py2.6.egg (from sphinx)
+Requirement already satisfied (use --upgrade to upgrade): docutils>=0.5 in /usr/local/lib/python2.6/dist-packages/docutils-0.7-py2.6.egg (from sphinx)
+Cleaning up...

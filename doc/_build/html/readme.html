@@ -1,0 +1,330 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>EULindexer &mdash; eulindexer v0.1-dev documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="eulindexer v0.1-dev documentation" href="index.html" />
+    <link rel="next" title="Deploy Notes" href="deploynotes.html" />
+    <link rel="prev" title="Documentation for The EULIndexer 0.1-dev" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="deploynotes.html" title="Deploy Notes"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Documentation for The EULIndexer 0.1-dev"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">eulindexer v0.1-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="eulindexer">
+<h1>EULindexer<a class="headerlink" href="#eulindexer" title="Permalink to this headline">¶</a></h1>
+<p>EULindexer is currently highly experimental code going through rapid development.
+It is not recommended to use this code base until our internal testing on this
+code has been completed and this message has been removed.</p>
+<p>EULindexer is a module that takes a JSON response (documented below) and deposits the data
+in that response in an index. For this initial implementation, <a class="reference external" href="https://github.com/emory-libraries/eulfedora">EULfedora</a>
+provides the webservice that will return the fedora object data it wants
+indexed. Meanwhile, Solr is the index that will be used. Theoretically,
+EULindexer can be used with other compatible services than just the above.</p>
+<div class="section" id="running-the-application">
+<h2>Running the Application<a class="headerlink" href="#running-the-application" title="Permalink to this headline">¶</a></h2>
+<p>To use the indexer, from the directory with manage.py, do:</p>
+<blockquote>
+$ python manage.py indexer</blockquote>
+<p>Available options that can be specified are as follows:</p>
+<blockquote>
+<table class="docutils option-list" frame="void" rules="none">
+<col class="option" />
+<col class="description" />
+<tbody valign="top">
+<tr><td class="option-group" colspan="2">
+<kbd><span class="option">--max-reconnect-retries</span></kbd></td>
+</tr>
+<tr><td>&nbsp;</td><td>This is a numeric entry that specifies how many times to try to reconnect
+to Fedora if the connection is lost. The current default is: 5.</td></tr>
+</tbody>
+</table>
+<p class="attribution">&mdash;retry-reconnect-wait
+This is a numeric entry that specifies the wait time between Fedora connection
+retry attempts. The current default is: 5.</p>
+</blockquote>
+<blockquote>
+<table class="docutils option-list" frame="void" rules="none">
+<col class="option" />
+<col class="description" />
+<tbody valign="top">
+<tr><td class="option-group" colspan="2">
+<kbd><span class="option">--index-max-tries</span></kbd></td>
+</tr>
+<tr><td>&nbsp;</td><td>This is the maximum amount of times the indexer will attempt to reindex an item
+before giving up on it and logging an error. Retrying a failed object is useful
+when an application that handles that object&#8217;s index is restarting. The current
+default is: 3.</td></tr>
+</tbody>
+</table>
+</blockquote>
+</div>
+<div class="section" id="reindex-individual-pids-or-an-entire-site">
+<h2>Reindex individual PIDs or an entire Site<a class="headerlink" href="#reindex-individual-pids-or-an-entire-site" title="Permalink to this headline">¶</a></h2>
+<p>To reindex, the following command is made available:</p>
+<blockquote>
+$ python manage.py reindex</blockquote>
+<p>At least one of the following two options is required:</p>
+<blockquote>
+<dl class="docutils">
+<dt>&lt;pid pid ...&gt;</dt>
+<dd>This is a list of pids to reindex. Only those pids specified will be reindexed.</dd>
+<dt>-s (&#8211;site)</dt>
+<dd>This the name of a site currently configured in the localsettings.py. ALL objects
+from that site will be reindexed.</dd>
+</dl>
+</blockquote>
+</div>
+<div class="section" id="expected-json-responses">
+<h2>Expected JSON Responses<a class="headerlink" href="#expected-json-responses" title="Permalink to this headline">¶</a></h2>
+<p>This application expects two distinct responses to queries the indexer will make. This allows
+an application that does not use eulfedora to simple code to this keyhole. Applications
+that don&#8217;t even support Python can be programmed to return these responses.</p>
+<div class="section" id="configuration-response">
+<h3>Configuration Response<a class="headerlink" href="#configuration-response" title="Permalink to this headline">¶</a></h3>
+<p>The first is querying a site&#8217;s indexdata url with no arguments. An example might be:
+<a class="reference external" href="http://localhost/myapp/indexdata/">http://localhost/myapp/indexdata/</a> . That URL will return a dictionary the consists of
+SOLR_URL and CONTENT_MODELS. The SOLR_URL is just the absolute url to the SOLR instance
+that the data should be placed into. The CONTENT_MODELS is a bit more complicated: it is
+a list of content model groups, or basically a list of a list.</p>
+<p>To be explain the CONTENT_MODELS, let&#8217;s assume our repository handled two object types,
+DOCUMENTS and VIDEOS. The DOCUMENTS object has a content model of &#8220;text&#8221; and the
+VIDEOS object has content models &#8220;visual&#8221; and &#8220;audio&#8221;. In that case, the following might
+be returned:</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;SOLR_URL&#8221;: &lt;url to solr, such as <a class="reference external" href="http://localhost/solr/app">http://localhost/solr/app</a>&gt;,
+&#8220;CONTENT_MODELS&#8221;: [[&#8220;text&#8221;], [&#8220;visual&#8221;, &#8220;audio&#8221;]]</dd>
+</dl>
+<p>}</p>
+<p>If we only had the DOCUMENTS object supported in our application and no VIDEOS, then
+the JSON Response would be:</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;SOLR_URL&#8221;: &lt;url to solr, such as <a class="reference external" href="http://localhost/solr/app">http://localhost/solr/app</a>&gt;,
+&#8220;CONTENT_MODELS&#8221;: [[&#8220;text&#8221;]]</dd>
+</dl>
+<p>}</p>
+<p>If Documents suddenly started to have a &#8220;visual&#8221; content model in addition to its
+&#8220;document&#8221; content model, then the JSON Response would be:</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;SOLR_URL&#8221;: &lt;url to solr, such as <a class="reference external" href="http://localhost/solr/app">http://localhost/solr/app</a>&gt;,
+&#8220;CONTENT_MODELS&#8221;: [[&#8220;text&#8221;, &#8220;visual&#8221;], [&#8220;visual&#8221;, &#8220;audio&#8221;]]</dd>
+</dl>
+<p>}</p>
+<p>For a completely generic example,</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;SOLR_URL&#8221;: &lt;url to solr, such as <a class="reference external" href="http://localhost/solr/app">http://localhost/solr/app</a>&gt;,
+&#8220;CONTENT_MODELS&#8221;: [[&#8220;Content Model #1&#8221;, &#8220;Content Model #2&#8221;], [&#8220;Content Model #3&#8221;], [&#8220;Content Model #4&#8221;, &#8220;Content Model #1&#8221;]]</dd>
+</dl>
+<p>}</p>
+<p>It is worth noting that the order the content models are returned in do not
+matter. They simply act as a &#8220;composite key&#8221; to identify an object from
+Fedora and require that object from fedora have at least those models
+associated with it.</p>
+</div>
+<div class="section" id="index-response">
+<h3>Index Response<a class="headerlink" href="#index-response" title="Permalink to this headline">¶</a></h3>
+<p>The second is querying a site&#8217;s indexdata url with a &lt;pid&gt; at the end. An
+example might be: <a class="reference external" href="http://localhost/myapp/indexdata">http://localhost/myapp/indexdata</a>/&lt;pid&gt;, or using this
+organization as an example with a fake pid of emory:1A1A2,
+http://localhost/myapp/indexdata/emory:1A1A2</p>
+<p>This will return a JSON dictionary in the form of
+&#8220;solr_field_name&#8221;:&#8221;value_to_put_in_field&#8221;. For an example, we will assume
+our Solr uses the fields &#8220;PID&#8221;, &#8220;Title&#8221;, and &#8220;Description&#8221;. Besides the
+fake pid above of emory:1A1A2, our object has a title of &#8220;Emory University&#8221;
+with a description of &#8220;A University located in the Southeast.&#8221;</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;PID&#8221;:&#8221;emory:1A1A2&#8221;,
+&#8220;Title&#8221;:&#8221;Emory University&#8221;,
+&#8220;Description&#8221;: &#8220;A University located in the Southeast.&#8221;</dd>
+</dl>
+<p>}</p>
+<p>For a completely generic version,</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;PID&#8221;:&#8221;&lt;pid&gt;&#8221;,
+&#8220;Title&#8221;:&#8221;&lt;title&gt;&#8221;,
+&#8220;Description&#8221;: &#8220;&lt;description&gt;&#8221;</dd>
+</dl>
+<p>}</p>
+<p>Additionally, please note that any valid JSON format for value
+should work. For example, we could add a field &#8220;ContentModels&#8221;
+with a list:</p>
+<dl class="docutils">
+<dt>{</dt>
+<dd>&#8220;PID&#8221;:&#8221;&lt;pid&gt;&#8221;,
+&#8220;Title&#8221;:&#8221;&lt;title&gt;&#8221;,
+&#8220;Description&#8221;: &#8220;&lt;description&gt;&#8221;,
+&#8220;ContentModels&#8221;: [&#8220;Content Model #1&#8221;, &#8220;Content Model #2&#8221;]</dd>
+</dl>
+<p>}</p>
+</div>
+</div>
+<div class="section" id="using-with-eulfedora">
+<h2>Using with EULFedora<a class="headerlink" href="#using-with-eulfedora" title="Permalink to this headline">¶</a></h2>
+<p><a class="reference external" href="https://github.com/emory-libraries/eulfedora">EULfedora</a> has support for the above two views already built into it.
+The code for this functionality can be found under &lt;eulfedora_base&gt;/eulfedora/indexdata.
+The documentation is located within the views.py file. Of note, besides following the url mapping
+and adding the settings mentioned in those documents, your objects must extend
+their own index_data methods.</p>
+</div>
+<div class="section" id="pdf-text-stripping-support">
+<h2>PDF Text Stripping Support<a class="headerlink" href="#pdf-text-stripping-support" title="Permalink to this headline">¶</a></h2>
+<p>There is currently prototype support in EULIndexer for getting the text out
+of PDFs. This can be useful to allow for searching on the content of
+the PDF within a SOLR index. To do this, simply include the following
+in a project that intends to return the content from a PDF:</p>
+<p>from eulindexer.indexer.pdf import pdf_to_text</p>
+<dl class="docutils">
+<dt>To use on a file, the syntax is:</dt>
+<dd>text = pdf_to_text(open(pdf_filepath, &#8216;rb&#8217;))</dd>
+<dt>To use on a datastream from EULFedora, the syntax is:</dt>
+<dd>pdfobj = repository.get_object(pid)
+text = pdf_to_text(pdfobj.pdf.content)</dd>
+</dl>
+</div>
+<div class="section" id="dependencies">
+<h2>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this headline">¶</a></h2>
+<p><strong>EULindexer</strong> currently depends on
+<a class="reference external" href="http://pypi.python.org/pypi/Django/">django</a>,
+<a class="reference external" href="https://github.com/tow/sunburnt/">sunburnt</a>,
+<a class="reference external" href="http://code.google.com/p/httplib2/">httplib2</a>,
+<a class="reference external" href="http://pypi.python.org/pypi/stompest/1.0.0">stompest</a>,
+<a class="reference external" href="http://pypi.python.org/pypi/pyPdf">pyPdf</a>,</p>
+<p><strong>EULindexer</strong> can be used without
+<a class="reference external" href="https://github.com/emory-libraries/eulfedora">EULfedora</a>, but a
+compatible web interface would need to be built for any replacement.</p>
+</div>
+<div class="section" id="contact-information">
+<h2>Contact Information<a class="headerlink" href="#contact-information" title="Permalink to this headline">¶</a></h2>
+<p><strong>eulindexer</strong> was created by the Digital Programs and Systems Software
+Team of <a class="reference external" href="http://web.library.emory.edu/">Emory University Libraries</a>.</p>
+<p><a class="reference external" href="mailto:libsysdev-l&#37;&#52;&#48;listserv&#46;cc&#46;emory&#46;edu">libsysdev-l<span>&#64;</span>listserv<span>&#46;</span>cc<span>&#46;</span>emory<span>&#46;</span>edu</a></p>
+</div>
+<div class="section" id="license">
+<h2>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h2>
+<p><strong>eulindexer</strong> is distributed under the Apache 2.0 License.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">EULindexer</a><ul>
+<li><a class="reference internal" href="#running-the-application">Running the Application</a></li>
+<li><a class="reference internal" href="#reindex-individual-pids-or-an-entire-site">Reindex individual PIDs or an entire Site</a></li>
+<li><a class="reference internal" href="#expected-json-responses">Expected JSON Responses</a><ul>
+<li><a class="reference internal" href="#configuration-response">Configuration Response</a></li>
+<li><a class="reference internal" href="#index-response">Index Response</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#using-with-eulfedora">Using with EULFedora</a></li>
+<li><a class="reference internal" href="#pdf-text-stripping-support">PDF Text Stripping Support</a></li>
+<li><a class="reference internal" href="#dependencies">Dependencies</a></li>
+<li><a class="reference internal" href="#contact-information">Contact Information</a></li>
+<li><a class="reference internal" href="#license">License</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Documentation for The EULIndexer 0.1-dev</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="deploynotes.html"
+                        title="next chapter">Deploy Notes</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/readme.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" size="18" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="deploynotes.html" title="Deploy Notes"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Documentation for The EULIndexer 0.1-dev"
+             >previous</a> |</li>
+        <li><a href="index.html">eulindexer v0.1-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2011, Emory University Libraries.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.0.4.
+    </div>
+  </body>
+</html>

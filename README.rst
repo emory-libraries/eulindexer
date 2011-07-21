@@ -12,12 +12,6 @@ indexed. Meanwhile, Solr is the index that will be used. Theoretically,
 EULindexer can be used with other compatible services than just the above.
 
 
-Setup
------
-
-Please following the directions under DEPLOYNOTES.rst on configuring this application.
-
-
 Running the Application
 -----------------------
 
@@ -151,6 +145,17 @@ with a list:
   "Description": "<description>",
   "ContentModels": ["Content Model #1", "Content Model #2"]
 }
+
+
+Using with EULFedora
+--------------------
+
+`EULfedora <https://github.com/emory-libraries/eulfedora>`_ has support for the above two views already built into it.
+The code for this functionality can be found under <eulfedora_base>/eulfedora/indexdata.
+The documentation is located within the views.py file. Of note, besides following the url mapping
+and adding the settings mentioned in those documents, your objects must extend
+their own index_data methods. 
+
 
 PDF Text Stripping Support
 --------------------------

@@ -20,6 +20,7 @@ from eulindexer.indexer.models import IndexError
 
 
 class IndexErrorAdminForm(forms.ModelForm):
+    """Custom admin form to specify textarea widget for detail field."""
     # custom admin form to specify textarea widget for detail field
     class Meta:
         model = IndexError
@@ -28,6 +29,7 @@ class IndexErrorAdminForm(forms.ModelForm):
         }
 
 class IndexErrorAdmin(admin.ModelAdmin):
+    """Custom error list form."""
     form = IndexErrorAdminForm
     date_hierarchy = 'time'
     list_display = ('object_id', 'site', 'time', 'detail')
