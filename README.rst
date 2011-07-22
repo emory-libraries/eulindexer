@@ -12,8 +12,8 @@ indexed. Meanwhile, Solr is the index that will be used. Theoretically,
 EULindexer can be used with other compatible services than just the above.
 
 
-Running the Application
------------------------
+Running the Indexer
+-------------------
 
 To use the indexer, from the directory with manage.py, do:
 
@@ -72,35 +72,47 @@ a list of content model groups, or basically a list of a list.
 To be explain the CONTENT_MODELS, let's assume our repository handled two object types,
 DOCUMENTS and VIDEOS. The DOCUMENTS object has a content model of "text" and the
 VIDEOS object has content models "visual" and "audio". In that case, the following might
-be returned:
+be returned: ::
 
-{
-  "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-  "CONTENT_MODELS": [["text"], ["visual", "audio"]]
-}
+  {
+    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
+    "CONTENT_MODELS": [
+                         ["text"], 
+                         ["visual", "audio"]
+                      ]
+  }
 
 If we only had the DOCUMENTS object supported in our application and no VIDEOS, then
-the JSON Response would be:
+the JSON Response would be: ::
 
-{
-  "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-  "CONTENT_MODELS": [["text"]]
-}
+  {
+    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
+    "CONTENT_MODELS": [
+                         ["text"]
+                      ]
+  }
 
 If Documents suddenly started to have a "visual" content model in addition to its
-"document" content model, then the JSON Response would be:
+"document" content model, then the JSON Response would be: ::
 
-{
-  "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-  "CONTENT_MODELS": [["text", "visual"], ["visual", "audio"]]
-}
+  {
+    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
+    "CONTENT_MODELS": [
+                         ["text", "visual"], 
+                         ["visual", "audio"]
+                      ]
+  }
 
-For a completely generic example,
+For a completely generic example: ::
 
-{
-  "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-  "CONTENT_MODELS": [["Content Model #1", "Content Model #2"], ["Content Model #3"], ["Content Model #4", "Content Model #1"]]
-}
+  {
+    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
+    "CONTENT_MODELS": [
+                         ["Content Model #1", "Content Model #2"],
+                         ["Content Model #3"], 
+                         ["Content Model #4", "Content Model #1"]
+                      ]
+  }
 
 It is worth noting that the order the content models are returned in do not
 matter. They simply act as a "composite key" to identify an object from 
@@ -119,32 +131,32 @@ This will return a JSON dictionary in the form of
 "solr_field_name":"value_to_put_in_field". For an example, we will assume 
 our Solr uses the fields "PID", "Title", and "Description". Besides the
 fake pid above of emory:1A1A2, our object has a title of "Emory University"
-with a description of "A University located in the Southeast."
+with a description of "A University located in the Southeast.": ::
 
-{
-  "PID":"emory:1A1A2",
-  "Title":"Emory University",
-  "Description": "A University located in the Southeast."
-}  
+  {
+    "PID":"emory:1A1A2",
+    "Title":"Emory University",
+    "Description": "A University located in the Southeast."
+  }  
 
-For a completely generic version,
+For a completely generic version: ::
 
-{
-  "PID":"<pid>",
-  "Title":"<title>",
-  "Description": "<description>"
-}
+  {
+    "PID":"<pid>",
+    "Title":"<title>",
+    "Description": "<description>"
+  }
 
 Additionally, please note that any valid JSON format for value
 should work. For example, we could add a field "ContentModels"
-with a list:
+with a list: ::
 
-{
-  "PID":"<pid>",
-  "Title":"<title>",
-  "Description": "<description>",
-  "ContentModels": ["Content Model #1", "Content Model #2"]
-}
+  {
+    "PID":"<pid>",
+    "Title":"<title>",
+    "Description": "<description>",
+    "ContentModels": ["Content Model #1", "Content Model #2"]
+  }
 
 
 Using with EULFedora

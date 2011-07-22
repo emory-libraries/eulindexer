@@ -1,0 +1,253 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>eulindexer Code Documentation for eulindexer &mdash; eulindexer v0.1-dev documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="eulindexer v0.1-dev documentation" href="index.html" />
+    <link rel="prev" title="Deploy Notes" href="deploynotes.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="deploynotes.html" title="Deploy Notes"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">eulindexer v0.1-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="eulindexer-code-documentation-for-eulindexer">
+<h1><tt class="xref py py-mod docutils literal"><span class="pre">eulindexer</span></tt> Code Documentation for eulindexer<a class="headerlink" href="#eulindexer-code-documentation-for-eulindexer" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="indexer">
+<h2>indexer<a class="headerlink" href="#indexer" title="Permalink to this headline">¶</a></h2>
+<p>The main module for communication with Fedora and
+various configured sites.</p>
+<div class="section" id="module-eulindexer.indexer.management.commands.indexer">
+<span id="indexer-service"></span><h3>Indexer Service<a class="headerlink" href="#module-eulindexer.indexer.management.commands.indexer" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="eulindexer.indexer.management.commands.indexer.Command">
+<em class="property">class </em><tt class="descclassname">eulindexer.indexer.management.commands.indexer.</tt><tt class="descname">Command</tt><a class="headerlink" href="#eulindexer.indexer.management.commands.indexer.Command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Service that listens for Fedora STOMP updates and processes those objects
+against the configured site indexes.</p>
+<dl class="method">
+<dt id="eulindexer.indexer.management.commands.indexer.Command.process_queue">
+<tt class="descname">process_queue</tt><big>(</big><big>)</big><a class="headerlink" href="#eulindexer.indexer.management.commands.indexer.Command.process_queue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loop through items that have been queued for indexing; if
+the configured delay time has passed, then attempt to index
+them, and log any indexing errors.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="eulindexer.indexer.management.commands.indexer.Command.reconnect_listener">
+<tt class="descname">reconnect_listener</tt><big>(</big><big>)</big><a class="headerlink" href="#eulindexer.indexer.management.commands.indexer.Command.reconnect_listener" title="Permalink to this definition">¶</a></dt>
+<dd><p>Attempt to reconnect the listener, e.g. if Fedora is
+shutdown.  Waits the configured time between attemps to
+reconnect; will try to reconnect a configured number of times
+before giving up.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-eulindexer.indexer.management.commands.reindex">
+<span id="reindex-command-s"></span><h3>Reindex Command(s)<a class="headerlink" href="#module-eulindexer.indexer.management.commands.reindex" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="eulindexer.indexer.management.commands.reindex.Command">
+<em class="property">class </em><tt class="descclassname">eulindexer.indexer.management.commands.reindex.</tt><tt class="descname">Command</tt><a class="headerlink" href="#eulindexer.indexer.management.commands.reindex.Command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Index Fedora objects, specified by pid, against the configured site indexes.</p>
+<dl class="method">
+<dt id="eulindexer.indexer.management.commands.reindex.Command.load_pid_cmodels">
+<tt class="descname">load_pid_cmodels</tt><big>(</big><em>pids=None</em>, <em>content_models=None</em><big>)</big><a class="headerlink" href="#eulindexer.indexer.management.commands.reindex.Command.load_pid_cmodels" title="Permalink to this definition">¶</a></dt>
+<dd><p>Query the Fedora RIsearch for the pids and content models
+to be indexed.  Stores the result as an RDF graph so it can be
+queried by object.</p>
+<p>This method has two basic modes of operation: if a list of
+pids are specified, it queries the RIsearch for the content
+models for only the objects corresponding to those pids.  When
+given a list of content models, it will query for all objects
+with any of the content models.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>pids</strong> &#8211; list of pids - query will be filtered to include
+only the specified pids.</li>
+<li><strong>content_models</strong> &#8211; list of content models - query will
+find all pids with any of the specified content models</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="eulindexer.indexer.management.commands.reindex.Command.pids_from_graph">
+<tt class="descname">pids_from_graph</tt><big>(</big><big>)</big><a class="headerlink" href="#eulindexer.indexer.management.commands.reindex.Command.pids_from_graph" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generator of pids based on the Content Model RDF graph.
+Intended for use in Site indexing mode, when the cmodel graph
+should be populated with pid and content model information for
+objects with any content models the site indexes.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-eulindexer.indexer.models">
+<span id="models"></span><h3>Models<a class="headerlink" href="#module-eulindexer.indexer.models" title="Permalink to this headline">¶</a></h3>
+<dl class="exception">
+<dt id="eulindexer.indexer.models.IndexDataReadError">
+<em class="property">exception </em><tt class="descclassname">eulindexer.indexer.models.</tt><tt class="descname">IndexDataReadError</tt><a class="headerlink" href="#eulindexer.indexer.models.IndexDataReadError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Custom exception for failure to retrieve the index data for an item; should be considered
+as possibly recoverable, since the site may be temporarily available.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="eulindexer.indexer.models.IndexError">
+<em class="property">class </em><tt class="descclassname">eulindexer.indexer.models.</tt><tt class="descname">IndexError</tt><big>(</big><em>*args</em>, <em>**kwargs</em><big>)</big><a class="headerlink" href="#eulindexer.indexer.models.IndexError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Database model for tracking errors when the indexer fails to process an item.</p>
+</dd></dl>
+
+<dl class="exception">
+<dt id="eulindexer.indexer.models.RecoverableIndexError">
+<em class="property">exception </em><tt class="descclassname">eulindexer.indexer.models.</tt><tt class="descname">RecoverableIndexError</tt><a class="headerlink" href="#eulindexer.indexer.models.RecoverableIndexError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Custom Exception wrapper class for an index errors where a
+recovery is possible and the index should be retried.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="eulindexer.indexer.models.init_configured_indexes">
+<tt class="descclassname">eulindexer.indexer.models.</tt><tt class="descname">init_configured_indexes</tt><big>(</big><big>)</big><a class="headerlink" href="#eulindexer.indexer.models.init_configured_indexes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initialize a <tt class="xref py py-class docutils literal"><span class="pre">SiteIndex</span></tt> for each site configured
+in Django settings.  Returns a dictionary of site name (matching
+the keys in INDEXER_SITE_URLS) and <tt class="xref py py-class docutils literal"><span class="pre">IndexerSettings</span></tt>
+objects.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="pdf">
+<h3>PDF<a class="headerlink" href="#pdf" title="Permalink to this headline">¶</a></h3>
+</div>
+<div class="section" id="module-eulindexer.indexer.admin">
+<span id="admin"></span><h3>Admin<a class="headerlink" href="#module-eulindexer.indexer.admin" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="eulindexer.indexer.admin.IndexErrorAdmin">
+<em class="property">class </em><tt class="descclassname">eulindexer.indexer.admin.</tt><tt class="descname">IndexErrorAdmin</tt><big>(</big><em>model</em>, <em>admin_site</em><big>)</big><a class="headerlink" href="#eulindexer.indexer.admin.IndexErrorAdmin" title="Permalink to this definition">¶</a></dt>
+<dd><p>Custom error list form.</p>
+<dl class="attribute">
+<dt id="eulindexer.indexer.admin.IndexErrorAdmin.form">
+<tt class="descname">form</tt><a class="headerlink" href="#eulindexer.indexer.admin.IndexErrorAdmin.form" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#eulindexer.indexer.admin.IndexErrorAdminForm" title="eulindexer.indexer.admin.IndexErrorAdminForm"><tt class="xref py py-class docutils literal"><span class="pre">IndexErrorAdminForm</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="eulindexer.indexer.admin.IndexErrorAdminForm">
+<em class="property">class </em><tt class="descclassname">eulindexer.indexer.admin.</tt><tt class="descname">IndexErrorAdminForm</tt><big>(</big><em>data=None</em>, <em>files=None</em>, <em>auto_id='id_%s'</em>, <em>prefix=None</em>, <em>initial=None</em>, <em>error_class=&lt;class 'django.forms.util.ErrorList'&gt;</em>, <em>label_suffix=':'</em>, <em>empty_permitted=False</em>, <em>instance=None</em><big>)</big><a class="headerlink" href="#eulindexer.indexer.admin.IndexErrorAdminForm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Custom admin form to specify textarea widget for detail field.</p>
+</dd></dl>
+
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><tt class="docutils literal"><span class="pre">eulindexer</span></tt> Code Documentation for eulindexer</a><ul>
+<li><a class="reference internal" href="#indexer">indexer</a><ul>
+<li><a class="reference internal" href="#module-eulindexer.indexer.management.commands.indexer">Indexer Service</a></li>
+<li><a class="reference internal" href="#module-eulindexer.indexer.management.commands.reindex">Reindex Command(s)</a></li>
+<li><a class="reference internal" href="#module-eulindexer.indexer.models">Models</a></li>
+<li><a class="reference internal" href="#pdf">PDF</a></li>
+<li><a class="reference internal" href="#module-eulindexer.indexer.admin">Admin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="deploynotes.html"
+                        title="previous chapter">Deploy Notes</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/apidocs.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" size="18" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="deploynotes.html" title="Deploy Notes"
+             >previous</a> |</li>
+        <li><a href="index.html">eulindexer v0.1-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2011, Emory University Libraries.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.0.4.
+    </div>
+  </body>
+</html>
