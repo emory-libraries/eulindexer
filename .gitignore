@@ -1,4 +1,4 @@
 *.pyc
 eulindexer/localsettings.py
 #ignore the docs _build directory
-eulindexer/doc/_build/
+doc/_build/
