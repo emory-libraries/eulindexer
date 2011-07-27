@@ -74,7 +74,8 @@ queueing service. This enables indexers to listen on that service's queues for
 updates and respond to them in custom-defined ways. This section describes the 
 Fedora configuration necessary for this indexer project to communicate with it.
 
-**Install Spring**
+Install Spring
+--------------
 
 For our Production installation, we have installed Spring as part of
 enabling this service. We are using Spring Framework 3.1.0.M1 which
@@ -84,7 +85,8 @@ Once downloaded and extracted, run the following copy command: ::
 
   cp <extracted_directory>/spring-framework-3.1.0.M1/dist/org.springframework* <fedora_home>/tomcat/webapps/fedora/WEB-INF/lib/
 
-**Configure STOMP**
+Configure STOMP
+---------------
 
 By default, Fedora is configured to notify applications about data ingests,
 modifications, and deletions via the `JMS
@@ -110,7 +112,8 @@ This tells Fedora to expose its update messages via STOMP in addition to
 JMS. You can use another port besides 61613 if you prefer. Restart Fedora
 when you're ready for this change to take effect.
 
-**Add a message queue**
+Add a message queue
+-------------------
 
 JMS and STOMP have two ways of distributing messages: `topics` and `queues`.
 By default, Fedora is configured to use a topic named ``fedora.apim.update``
@@ -168,7 +171,7 @@ Restart Fedora when you're ready for this change to take effect.
 
 
 SOLR
-""""
+----
 
 EULIndexer also only supports SOLR for an index "out of the box" at this time. 
 To learn more about SOLR, please visit: http://lucene.apache.org/solr/ . Sample
@@ -216,4 +219,4 @@ must be restarted for those changes to take effect.
 Running The Indexer
 ^^^^^^^^^^^^^^^^^^^
 
-Please see this section under ``Readme``.
+Please see this section under `Readme <readme.html>`_.

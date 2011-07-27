@@ -17,7 +17,7 @@ a Fedora-Commons_ Repository into a Solr_ index.
 Contents
 ---------
 .. toctree::
-    :maxdepth: 3
+    :maxdepth: 4
 
     readme.rst
     deploynotes.rst

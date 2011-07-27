@@ -1,5 +1,5 @@
-EULindexer
-==========
+Readme
+======
 
 EULindexer is currently highly experimental code going through rapid development.
 It is not recommended to use this code base until our internal testing on this
@@ -19,15 +19,15 @@ To use the indexer, from the directory with manage.py, do:
 
   $ python manage.py indexer
 
-Available options that can be specified are as follows:
+Available options that can be specified are as follows: ::
   
   --max-reconnect-retries
       This is a numeric entry that specifies how many times to try to reconnect
-      to Fedora if the connection is lost. The current default is: 5.
+      to Fedora if the connection is lost. The current default is: 5. ::
 
   --retry-reconnect-wait
       This is a numeric entry that specifies the wait time between Fedora connection
-      retry attempts. The current default is: 5.
+      retry attempts. The current default is: 5. ::
 
   --index-max-tries
       This is the maximum amount of times the indexer will attempt to reindex an item
@@ -43,10 +43,10 @@ To reindex, the following command is made available:
 
   $ python manage.py reindex
 
-At least one of the following two options is required:
+At least one of the following two options is required: ::
   
   <pid pid ...>
-      This is a list of pids to reindex. Only those pids specified will be reindexed.
+      This is a list of pids to reindex. Only those pids specified will be reindexed. ::cd d
 
   -s (--site)
       This the name of a site currently configured in the localsettings.py. ALL objects
@@ -56,7 +56,7 @@ At least one of the following two options is required:
 Expected JSON Responses
 -----------------------
 
-This application expects two distinct responses to queries the indexer will make. This allows
+This application expects two distinct responses to -queries the indexer will make. This allows
 an application that does not use eulfedora to simple code to this keyhole. Applications
 that don't even support Python can be programmed to return these responses.
 
@@ -195,9 +195,9 @@ Dependencies
 `sunburnt <https://github.com/tow/sunburnt/>`_,
 `httplib2 <http://code.google.com/p/httplib2/>`_,
 `stompest <http://pypi.python.org/pypi/stompest/1.0.0>`_,
-`pyPdf <http://pypi.python.org/pypi/pyPdf>`_,
+`pyPdf <http://pypi.python.org/pypi/pyPdf>`_
 
-**EULindexer** can be used without 
+**EULindexer** could be used without 
 `EULfedora <https://github.com/emory-libraries/eulfedora>`_, but a
 compatible web interface would need to be built for any replacement.
 
