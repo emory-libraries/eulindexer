@@ -170,14 +170,14 @@ their own index_data methods.
 
 
 PDF Text Stripping Support
---------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-There is currently prototype support in EULIndexer for getting the text out
+There is currently prototype support in `EULfedora <https://github.com/emory-libraries/eulfedora>`_ for getting the text out
 of PDFs. This can be useful to allow for searching on the content of
 the PDF within a SOLR index. To do this, simply include the following
 in a project that intends to return the content from a PDF:
 
-from eulindexer.indexer.pdf import pdf_to_text
+from eulfedora.indexdata.util import pdf_to_text
 
 To use on a file, the syntax is:
   text = pdf_to_text(open(pdf_filepath, 'rb'))

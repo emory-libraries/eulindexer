@@ -3,4 +3,3 @@ django
 sunburnt
 httplib2
 stompest
-pyPdf

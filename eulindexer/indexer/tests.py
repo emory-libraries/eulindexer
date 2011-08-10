@@ -32,7 +32,6 @@ from eulfedora.models import DigitalObject, FileDatastream
 from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer, reindex
-from eulindexer.indexer.pdf import pdf_to_text
 from eulindexer.indexer.models import SiteIndex, IndexError, \
 	init_configured_indexes, IndexDataReadError
 
@@ -236,41 +235,6 @@ class IndexerTest(TestCase):
         self.assertEqual(site, indexerr.site)
         self.assert_('Failed to index' in indexerr.detail)
         self.assert_('2 attempts'  in indexerr.detail)
-
-
-class TestPdfObject(DigitalObject):
-    pdf = FileDatastream("PDF", "PDF document", defaults={
-        	'versionable': False, 'mimetype': 'application/pdf'
-        })
-
-
-class PdfToTextTest(TestCase):
-    fixture_dir = path.join(path.dirname(path.abspath(__file__)), 'fixtures')
-    pdf_filepath = path.join(fixture_dir, 'test.pdf')
-    pdf_text = 'This is a short PDF document to use for testing.'
-
-    def setUp(self):
-        self.repo = Repository(settings.FEDORA_TEST_ROOT, settings.FEDORA_TEST_USER,
-                               settings.FEDORA_TEST_PASSWORD)
-        with open(self.pdf_filepath) as pdf:
-            self.pdfobj = self.repo.get_object(type=TestPdfObject)
-            self.pdfobj.label = 'eulindexer test pdf object'
-            self.pdfobj.pdf.content = pdf
-            self.pdfobj.save()
-
-    def tearDown(self):
-        self.repo.purge_object(self.pdfobj.pid)
-        
-    def test_file(self):
-        # extract text from a pdf from a file on the local filesystem
-        text = pdf_to_text(open(self.pdf_filepath, 'rb'))
-        self.assertEqual(self.pdf_text, text)
-
-    def test_object_datastream(self):
-        # extract text from a pdf datastream in fedora
-        pdfobj = self.repo.get_object(self.pdfobj.pid, type=TestPdfObject)
-        text = pdf_to_text(pdfobj.pdf.content)
-        self.assertEqual(self.pdf_text, text)
 
 class SiteIndexTest(TestCase):
     '''Tests for the SiteIndex object, which wraps the index
