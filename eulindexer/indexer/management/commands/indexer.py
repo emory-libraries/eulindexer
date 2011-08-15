@@ -66,7 +66,7 @@ class Command(BaseCommand):
         make_option('--max-reconnect-retries', type='int', dest='max_reconnect_retries',
                     default=max_reconnect_retries,
                     help='How many times to try reconnecting to Fedora if the connection ' +
-                    	 'is lost (default: %default)'),
+                    	 'is lost (default: %default; -1 for no maximum)'),
         make_option('--retry-reconnect-wait', type='int', dest='retry_reconnect_wait',
                     default=retry_reconnect_wait,
                     help='How many seconds to wait between reconnect attempts if the ' +
@@ -171,19 +171,23 @@ class Command(BaseCommand):
         
         # wait the configured time and try to re-establish the listener
         retry_count = 1
-        while(retry_count <= self.max_reconnect_retries):
+        while(retry_count <= self.max_reconnect_retries or self.max_reconnect_retries == -1):
             sleep(self.retry_reconnect_wait)
             try:
                 self.listener = None
                 self.init_listener()
                 # if listener init succeeded, return for normal processing
+                logger.error('Reconnect attempt %d succeeded' % retry_count)
                 return
     
             # if fedora is still not available, attempting to
             # listen will generate a socket error
             except socketerror:
-                logger.error('Reconnect attempt %d of %d failed; waiting %ds before trying again' % \
-                             (retry_count, self.max_reconnect_retries, self.retry_reconnect_wait))
+                try_detail = ''
+                if self.max_reconnect_retries != -1:
+                    try_detail = 'of %d ' % self.max_reconnect_retries
+                logger.error('Reconnect attempt %d %sfailed; waiting %ds before trying again' % \
+                             (retry_count, try_detail, self.retry_reconnect_wait))
                 retry_count += 1
         
         # if we reached the max retry without connecting, bail out
