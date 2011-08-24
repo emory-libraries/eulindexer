@@ -25,7 +25,8 @@ from django.conf import settings
 from eulfedora.rdfns import model as modelns
 from eulfedora.server import Repository
 
-from eulindexer.indexer.models import init_configured_indexes, SiteIndex
+from eulindexer.indexer.models import init_configured_indexes, \
+     SiteIndex, SiteUnavailable
 
 class Command(BaseCommand):
     """Index Fedora objects, specified by pid, against the configured site indexes."""
@@ -58,9 +59,14 @@ class Command(BaseCommand):
             # only load the configuration for the one site we are interested in
             if verbosity > v_normal:
                 self.stdout.write('Loading index configuration for %s' % site)
-            self.indexes = {
-                site: SiteIndex(settings.INDEXER_SITE_URLS[site])
-            }
+            try:
+                self.indexes = {
+                    site: SiteIndex(settings.INDEXER_SITE_URLS[site])
+                }
+            except SiteUnavailable as err:
+                raise CommandError("Site '%s' is not available - %s" %
+                                   (site, err))
+            
             # Query fedora risearch for all objects with any of the
             # content models this site cares about.  If a site
             # requires a combination of content models, this may
@@ -75,7 +81,13 @@ class Command(BaseCommand):
         # a list of pids to index, from an unknown site 
         elif pids:
             # load configured site indexes so we can figure out which pids to index where
-            self.indexes = init_configured_indexes()
+            self.indexes, init_errors = init_configured_indexes()
+            if init_errors:
+                msg = 'Error loading index configuration for the following site(s):\n'
+                for site, err in init_errors.iteritems():
+                    msg += '\t%s:\t%s\n' % (site, err)
+                self.stdout.write(msg + '\n')
+                
             self.pids = pids
             self.load_pid_cmodels(pids=pids)
 

@@ -120,7 +120,13 @@ class Command(BaseCommand):
 
         # body is atom entry... category data includes which  datastream modified when appropriate
 
-        self.indexes = init_configured_indexes()
+        self.indexes, init_errors = init_configured_indexes()
+        if init_errors:
+            msg = 'Error loading index configuration for the following sites:\n'
+            for site, err in init_errors.iteritems():
+                msg += '\t%s:\t%s\n' % (site, err)
+                self.stdout.write(msg + '\n')
+                
     
         if verbosity > v_normal:
             self.stdout.write('Indexing the following sites:\n')

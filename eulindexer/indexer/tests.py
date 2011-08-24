@@ -33,7 +33,7 @@ from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer, reindex
 from eulindexer.indexer.models import SiteIndex, IndexError, \
-	init_configured_indexes, IndexDataReadError
+	init_configured_indexes, IndexDataReadError, SiteUnavailable
 
 from django.utils import simplejson
 from datetime import datetime, timedelta
@@ -320,7 +320,10 @@ class SiteIndexTest(TestCase):
         index.solr_interface = Mock()
 
         index_data = {'foo': 'bar', 'baz': 'qux'}
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(index_data)
+        mockresponse = Mock()
+        mockresponse.read.return_value = simplejson.dumps(index_data)
+        mockresponse.code = 2000
+        mockurllib.urlopen.return_value = mockresponse
         indexed = index.index_item(testpid)
         # solr 'add' should be called with data returned via index data webservice
         index.solr_interface.add.assert_called_with(index_data)
@@ -387,7 +390,10 @@ class TestInitConfiguredIndexes(TestCase):
         # currently. Just verifying app will throw an error and not
         # start until the unreachable host is up. Should likely be
         # handled some other way eventually.
-        self.assertRaises(urllib2.HTTPError, init_configured_indexes)
+        indexes, errors = init_configured_indexes()
+        self.assert_(isinstance(errors['site1'], SiteUnavailable))
+        self.assert_(isinstance(errors['site2'], SiteUnavailable))
+        self.assert_(isinstance(errors['site3'], SiteUnavailable))
 
     # Mock urllib calls to return an empty JSON response
     mockurllib = Mock(urllib2)
@@ -397,7 +403,7 @@ class TestInitConfiguredIndexes(TestCase):
     @patch('eulindexer.indexer.models.sunburnt')
     def test_init(self, mocksunburnt):
        # Verify index settings are loaded
-        indexes = init_configured_indexes()
+        indexes, errors = init_configured_indexes()
         self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
                          len(indexes.keys()),
                          'init_configured_index should initialize one index per configured site')
@@ -495,7 +501,7 @@ class ReindexTest(TestCase):
         
         # patch init_configured_indexes to return our mock site indexes
         with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
-                   new=Mock(return_value=indexes)):
+                   new=Mock(return_value=(indexes, {}))):
             # set mock indexes not to index any items 
             indexes['s1'].indexes_item.return_value = False
             indexes['s2'].indexes_item.return_value = False

@@ -15,7 +15,9 @@
 #   limitations under the License.
 
 import logging
+import socket
 import urllib2
+import warnings
 
 from django.conf import settings
 from django.db import models
@@ -37,6 +39,16 @@ class IndexError(models.Model):
 
     def __unicode__(self):
         return '%s (%s) %s' % (self.object_id, self.site, self.time)
+    
+class SiteUnavailable(IOError):
+    '''Custom Exception for error condition when a :class:`SiteIndex`
+    instance fails to load the site configuration.'''
+    pass
+
+class SolrUnavailable(SiteUnavailable):
+    '''Subclass of :class:`SiteUnavailable`; indicates the site is
+    unavailable because the Solr connection cannot be established'''
+    pass
 
 
 class SiteIndex(object):
@@ -49,9 +61,12 @@ class SiteIndex(object):
 
     def load_configuration(self):
         # load the index configuration from the specified site url
-        response = urllib2.urlopen(self.site_url)
-        index_config = simplejson.loads(response.read())
-        logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
+        try:
+            response = urllib2.urlopen(self.site_url)
+            index_config = simplejson.loads(response.read())
+            logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
+        except urllib2.URLError as err:
+            raise SiteUnavailable(err)
         
         if 'SOLR_URL' in index_config:
             solr_url = index_config['SOLR_URL']
@@ -73,9 +88,9 @@ class SiteIndex(object):
             # Instantiate a connection to this solr instance.
             try:
                 self.solr_interface = sunburnt.SolrInterface(self.solr_url)
-            except Exception as se:
-                logger.error('Unable to initialize SOLR (%s) settings for application url %s' % (self.solr_url, self.site_url))
-                raise
+            except socket.error as err:
+                logger.error('Unable to initialize SOLR connection at (%s) for application url %s' % (self.solr_url, self.site_url))
+                raise SolrUnavailable(err)
         
         if 'CONTENT_MODELS' in index_config:
             # the configuration returns a list of content model lists
@@ -176,14 +191,23 @@ class SiteIndex(object):
 
 def init_configured_indexes():
     '''Initialize a :class:`SiteIndex` for each site configured
-    in Django settings.  Returns a dictionary of site name (matching
-    the keys in INDEXER_SITE_URLS) and :class:`IndexerSettings`
-    objects.'''
+    in Django settings.
+
+    :returns: a tuple of two dictionaries; the first is a dictionary
+       of site name (matching the keys in INDEXER_SITE_URLS) and
+       :class:`IndexerSettings` objects; the second is a dictionary of
+       any sites that could not be loaded, with the error message.
+    '''
     indexes = {}
+    errors = {}
     for site, url in settings.INDEXER_SITE_URLS.iteritems():
-        indexes[site] = SiteIndex(url)
-        # FIXME: catch/report connection errors here
-    return indexes
+        try:
+            indexes[site] = SiteIndex(url)
+        except SolrUnavailable as err:
+            errors[site] = 'Solr unavailable: %s' % (err)
+        except SiteUnavailable as err:
+            errors[site] = err
+    return indexes, errors
 
 
 class RecoverableIndexError(Exception):
