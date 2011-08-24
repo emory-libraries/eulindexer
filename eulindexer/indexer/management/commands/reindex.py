@@ -134,8 +134,8 @@ class Command(BaseCommand):
 
     def load_pid_cmodels(self, pids=None, content_models=None):
         '''Query the Fedora RIsearch for the pids and content models
-        to be indexed.  Stores the result as an RDF graph so it can be
-        queried by object.
+        to be indexed.  Stores the result as an RDF graph (instance of
+        :class:`rdflib.graph.Graph`) so it can be queried by object.
 
         This method has two basic modes of operation: if a list of
         pids are specified, it queries the RIsearch for the content
@@ -168,10 +168,12 @@ class Command(BaseCommand):
                                                          type='triples', flush=True)
 
     def pids_from_graph(self):
-        '''Generator of pids based on the Content Model RDF graph.
-        Intended for use in Site indexing mode, when the cmodel graph
-        should be populated with pid and content model information for
-        objects with any content models the site indexes.'''
+        '''Generator of pids based on the Content Model RDF graph
+        (class:`rdflib.graph.Graph` instance).  Intended for use in
+        Site indexing mode, and expects content model information to
+        already be populated :meth:`load_pid_cmodels` with pid and
+        content model information for objects with any of the content
+        models that a particular site indexes.'''
         for subj in self.cmodels_graph.subjects(predicate=modelns.hasModel):
             # convert from URIRef to string 
             yield str(subj)
