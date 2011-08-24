@@ -22,6 +22,7 @@ from django.db import models
 from django.utils import simplejson
 from httplib2 import iri2uri
 from sunburnt import sunburnt, SolrError
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +140,12 @@ class SiteIndex(object):
         logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
 
         try:
+            start = time.time()
             response = urllib2.urlopen(indexdata_url)
             json_value = response.read()
+            logger.debug('%s %d : %f sec' % (indexdata_url,
+                                            response.code,
+                                            time.time() - start))
         except Exception as connection_error:
             logger.error('Error connecting to %s for %s: %s' % \
                          (indexdata_url, pid, connection_error))
@@ -156,7 +161,9 @@ class SiteIndex(object):
                             (pid, json_value))
 
         try:
+            start = time.time()
             self.solr_interface.add(index_data)
+            logger.debug('updated solr: %f sec' % (time.time() - start))
         except SolrError as se:
             logger.error('Error indexing for %s: %s' % (pid, se))
             raise
@@ -175,6 +182,7 @@ def init_configured_indexes():
     indexes = {}
     for site, url in settings.INDEXER_SITE_URLS.iteritems():
         indexes[site] = SiteIndex(url)
+        # FIXME: catch/report connection errors here
     return indexes
 
 
