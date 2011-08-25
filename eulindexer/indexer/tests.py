@@ -566,5 +566,37 @@ class ReindexTest(TestCase):
             self.assert_('s1' in self.command.indexes)
 
 
+    def test_index_by_cmodel(self):
 
+        pids = ['pid:a', 'pid:b', 'pid:c']
+        # cmodel graph is initialized by load_pid_cmodels and needs to
+        # return an iterable when queried
+        def set_cmodel_graph(*args, **kwargs):
+            self.command.cmodels_graph = Mock()
+            # set to a non-empty list so items will be indexed
+            self.command.cmodels_graph.objects.return_value = ['foo']
+        self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+        self.command.pids_from_graph = Mock(return_value=pids)
+        indexconfig1 = Mock()
+        indexconfig2 = Mock()
+        indexes = {
+            's1': indexconfig1,
+            's2': indexconfig2
+        }
+        
+        # patch init_configured_indexes to return our mock site indexes
+        with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
+                   new=Mock(return_value=(indexes, {}))):
+            # set mock index to index all items successfully
+            indexes['s1'].indexes_item.return_value = True
+            indexes['s1'].index_item.return_value = True
 
+            # specify cmodel as pid
+            self.command.handle(cmodel='my:stuff-1.0')
+            mock_load_pids = self.command.load_pid_cmodels
+            mock_load_pids.assert_called_with(content_models=['info:fedora/my:stuff-1.0'])
+            
+            # specify cmodel as uri
+            self.command.handle(cmodel='info:fedora/my:stuff-1.0')
+            mock_load_pids = self.command.load_pid_cmodels
+            mock_load_pids.assert_called_with(content_models=['info:fedora/my:stuff-1.0'])

@@ -39,6 +39,8 @@ class Command(BaseCommand):
                     choices=settings.INDEXER_SITE_URLS.keys(),
                     help='Index all objects that belong to a configured site [choices: ' +
                          ','.join(settings.INDEXER_SITE_URLS.keys()) + ']'),
+        make_option('-c', '--content-model', dest='cmodel',
+                    help='Index all objects with the specified content model'),
     )
 
     def handle(self, *pids, **options):
@@ -78,16 +80,26 @@ class Command(BaseCommand):
             # set pids to be indexed based on the risearch query result
             self.pids = self.pids_from_graph()
 
+        elif 'cmodel' in options and options['cmodel']:
+            cmodel_pid = options['cmodel']
+            if verbosity > v_normal:
+                self.stdout.write("Indexing objects with content model '%s'\n" % \
+                                  cmodel_pid)
+            # get the content model object from fedora in order to 
+            # support both uri and pid notation
+            cmodel = self.repo.get_object(cmodel_pid)
+            # load pids for the specified cmodel
+            self.load_pid_cmodels(content_models=[cmodel.uri])
+            # set pids to be indexed based on the risearch query result
+            self.pids = self.pids_from_graph()
+
+            # load configured site indexes 
+            self.load_indexes()
+
         # a list of pids to index, from an unknown site 
         elif pids:
             # load configured site indexes so we can figure out which pids to index where
-            self.indexes, init_errors = init_configured_indexes()
-            if init_errors:
-                msg = 'Error loading index configuration for the following site(s):\n'
-                for site, err in init_errors.iteritems():
-                    msg += '\t%s:\t%s\n' % (site, err)
-                self.stdout.write(msg + '\n')
-                
+            self.load_indexes()
             self.pids = pids
             self.load_pid_cmodels(pids=pids)
 
@@ -143,6 +155,17 @@ class Command(BaseCommand):
             # if err count is not zero, report it also
             if self.err_count:
                 self.stdout.write('%d errors on attempts to index\n' % self.err_count)
+
+    def load_indexes(self):
+        # load configured site indexes so we can figure out which pids to index where
+        # report on any sites that failed to load
+        self.indexes, init_errors = init_configured_indexes()
+        if init_errors:
+            msg = 'Error loading index configuration for the following site(s):\n'
+            for site, err in init_errors.iteritems():
+                msg += '\t%s:\t%s\n' % (site, err)
+                self.stdout.write(msg + '\n')
+
 
     def load_pid_cmodels(self, pids=None, content_models=None):
         '''Query the Fedora RIsearch for the pids and content models
