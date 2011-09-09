@@ -29,6 +29,7 @@ from urlparse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
+from django import conf
 
 from eulfedora.rdfns import model as modelns
 from eulfedora.models import DigitalObject
@@ -94,16 +95,32 @@ class Command(BaseCommand):
                     (self.fedora_server, self.stomp_port))
         self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
 
+    def init_indexes(self):
+        # initialize all indexes configured in django settings
+        self.indexes, init_errors = init_configured_indexes()
+        if init_errors:
+            msg = 'Error loading index configuration for the following sites:\n'
+            for site, err in init_errors.iteritems():
+                msg += '\t%s:\t%s\n' % (site, err)
+                self.stdout.write(msg + '\n')
+                
+        if self.verbosity > self.v_normal:
+            self.stdout.write('Indexing the following sites:\n')
+            for site, index in self.indexes.iteritems():
+                self.stdout.write('\t%s\n%s\n' % (site, index.config_summary()))
+
+
     def handle(self, *args, **options):
         # bind a handler for interrupt signal
         signal.signal(signal.SIGINT, self.interrupt_handler)
+        signal.signal(signal.SIGHUP, self.hangup_handler)
         
         # verbosity should be set by django BaseCommand standard options
-        v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
+        self.v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
         if 'verbosity' in options:
-            verbosity = int(options['verbosity'])
+            self.verbosity = int(options['verbosity'])
         else:
-            verbosity = v_normal
+            self.verbosity = self.v_normal
 
         # override retry/wait default settings if specified
         if 'retry_reconnect_wait' in options:
@@ -125,20 +142,8 @@ class Command(BaseCommand):
                                '- check that Fedora is running and that messaging is enabled ' +
                                'and  configured correctly')
 
-        # body is atom entry... category data includes which  datastream modified when appropriate
-
-        self.indexes, init_errors = init_configured_indexes()
-        if init_errors:
-            msg = 'Error loading index configuration for the following sites:\n'
-            for site, err in init_errors.iteritems():
-                msg += '\t%s:\t%s\n' % (site, err)
-                self.stdout.write(msg + '\n')
-                
-    
-        if verbosity > v_normal:
-            self.stdout.write('Indexing the following sites:\n')
-            for site, index in self.indexes.iteritems():
-                self.stdout.write('\t%s\n%s\n' % (site, index.config_summary()))
+        # load site index configurations
+        self.init_indexes()
 
         while (True):
             # if we've received an interrupt, don't check for new messages
@@ -157,11 +162,11 @@ class Command(BaseCommand):
                 try:
                     data_available = self.listener.canRead(timeout=self.index_delay)
                 except Exception as err:
-                    # SIGINT interrupt gets propagated to the socket 
+                    # signals like SIGINT/SIGHUP get propagated to the socket 
                     if self.interrupted:
                         pass
                     else:
-                        logger.error('Error during Stomp listen: %s' % sfe)
+                        logger.error('Error during Stomp listen: %s' % err)
                     data_available = False
 
                 # When Fedora is shut down, canRead returns True but we
@@ -345,11 +350,28 @@ class Command(BaseCommand):
             # set interrupt flag so main loop knows to quit as soon as it can
             self.interrupted = True
 
+            if self.verbosity >= self.v_normal:
+                self.stdout.write('SIGINT received\n')
+
             # report if indexer currently has items queued for indexing
             if self.to_index:
-                msg = '\n%d item(s) queued to be indexed.\n' % len(self.to_index.keys())
-                msg += 'Indexer will stop listening for updateds, and will exit when currently queued items have been indexed.\n'
+                msg = '\n%d item(s) currently queued for indexing.\n' % len(self.to_index.keys())
+                msg += 'Indexer will stop listening for updates and exit after currently queued items have been indexed.\n'
                 msg += '(Ctrl-C / Interrupt again to quit immediately)\n'
                 self.stdout.write(msg)
-                self.stdout.flush()
+                
+            self.stdout.flush()
+
+    def hangup_handler(self, signum, frame):
+        '''On SIGHUP, reload site index configurations and
+        reinitialize connections to Solr.
+        '''
+        if signum == signal.SIGHUP:
+            # it would be even better if we could reload django settings here, 
+            # but I can't figure out a way to do that...
+            
+            if self.verbosity >= self.v_normal:
+                self.stdout.write('SIGHUP received; reloading site index configurations.')
+            # reload site indexes
+            self.init_indexes()
 
