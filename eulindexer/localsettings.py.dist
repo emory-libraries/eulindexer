@@ -44,6 +44,11 @@ INDEXER_SITE_URLS = {
     'project-nickname': 'http://example.host.name/indexdata/',
 }
 
+# optional: define a path to an SSL cert file, if accessing Solr via
+# SSL and httplib2 does not have the signing cert pre-loaded
+#SOLR_CA_CERT_PATH = '/etc/ssl/certs/ca-certificates.crt'
+
+
 # Needed for some tests - should this be mocked out? 
 FEDORA_ROOT='http://localhost:8080/fedora/'
 FEDORA_TEST_ROOT='http://localhost:8080/fedora/'

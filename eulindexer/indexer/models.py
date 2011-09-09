@@ -14,6 +14,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import httplib2
 import logging
 import socket
 import urllib2
@@ -87,7 +88,16 @@ class SiteIndex(object):
 
             # Instantiate a connection to this solr instance.
             try:
-                self.solr_interface = sunburnt.SolrInterface(self.solr_url)
+                # initialize a solr connection with a customized http connection
+                http_opts = {}
+                # if a cert file is configured, add it to http options
+                if hasattr(settings, 'SOLR_CA_CERT_PATH'):
+                    http_opts['ca_certs'] = settings.SOLR_CA_CERT_PATH
+                # create a new http connection with the configured options to pass
+                # to sunburnt init
+                solr_opts = {'http_connection': httplib2.Http(**http_opts)}
+                self.solr_interface = sunburnt.SolrInterface(self.solr_url, **solr_opts)
+                
             except socket.error as err:
                 logger.error('Unable to initialize SOLR connection at (%s) for application url %s' % (self.solr_url, self.site_url))
                 raise SolrUnavailable(err)
