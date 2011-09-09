@@ -19,6 +19,7 @@ import logging
 import os
 import urllib2
 from optparse import make_option
+import signal
 from socket import error as socketerror
 from stompest.simple import Stomp
 from stompest.error import StompFrameError
@@ -78,6 +79,9 @@ class Command(BaseCommand):
 
     )
 
+    # flag will be set to True when a SIGINT has been received
+    interrupted = False
+    
     def init_listener(self):
         if self.fedora_server is None or self.stomp_port is None:
             fedora_info = urlparse(settings.FEDORA_ROOT)
@@ -91,6 +95,9 @@ class Command(BaseCommand):
         self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
 
     def handle(self, *args, **options):
+        # bind a handler for interrupt signal
+        signal.signal(signal.SIGINT, self.interrupt_handler)
+        
         # verbosity should be set by django BaseCommand standard options
         v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
         if 'verbosity' in options:
@@ -131,42 +138,66 @@ class Command(BaseCommand):
         if verbosity > v_normal:
             self.stdout.write('Indexing the following sites:\n')
             for site, index in self.indexes.iteritems():
-                self.stdout.write('\t%s\n' % site)
-                self.stdout.write(index.config_summary())
+                self.stdout.write('\t%s\n%s\n' % (site, index.config_summary()))
 
         while (True):
+            # if we've received an interrupt, don't check for new messages
+            if self.interrupted:
+                # if we're interrupted but still have items queued for update,
+                # sleep instead of listening to the queue
+                if self.to_index:
+                    sleep(self.index_delay)
+
+            # no interrupt - normal behavior
             # check if there is a new message, but timeout after 3 seconds so we can process
             # any recently updated objects
-            data_available = self.listener.canRead(timeout=self.index_delay)
+            else:
+                # check if there is a new message, but timeout after 3 seconds so we can process
+                # any recently updated objects
+                try:
+                    data_available = self.listener.canRead(timeout=self.index_delay)
+                except Exception as err:
+                    # SIGINT interrupt gets propagated to the socket 
+                    if self.interrupted:
+                        pass
+                    else:
+                        logger.error('Error during Stomp listen: %s' % sfe)
+                    data_available = False
 
-            # When Fedora is shut down, canRead returns True but we
-            # get an exception on the receiveFrame call - catch that
-            # error and try to reconnect
-            try:
+                # When Fedora is shut down, canRead returns True but we
+                # get an exception on the receiveFrame call - catch that
+                # error and try to reconnect
+                try:
+                    
+                    # if there is a new message, process it
+                    if data_available:
+                        frame = self.listener.receiveFrame()
+                        # TODO: use message body instead of headers?  (includes datastream id for modify datastream API calls)
+                        pid = frame['headers']['pid']
+                        method = frame['headers']['methodName']
+                        logger.info('Received message: %s - %s' % (method, pid))
+                        self.listener.ack(frame)
+                        
+                        self.process_message(pid, method)
 
-                # if there is a new message, process it
-                if data_available:
-                    frame = self.listener.receiveFrame()
-                    # TODO: use message body instead of headers?  (includes datastream id for modify datastream API calls)
-                    pid = frame['headers']['pid']
-                    method = frame['headers']['methodName']
-                    logger.info('Received message: %s - %s' % (method, pid))
-                    self.listener.ack(frame)
-
-                    self.process_message(pid, method)
-
-            except StompFrameError as sfe:
-                # this most likely indicates that Fedora is no longer available
-                # peirodically attempt to reconnect (within some limits)
-                
-                logger.error('Received Stomp frame error "%s"' % sfe)
-                # wait and try to re-establish the listener
-                # - will either return on success or raise a CommandError if
-                # it can't connect within the specified time/number of retries
-                self.reconnect_listener()
-
+                except StompFrameError as sfe:
+                    # this most likely indicates that Fedora is no longer available
+                    # peirodically attempt to reconnect (within some limits)
+                    
+                    logger.error('Received Stomp frame error "%s"' % sfe)
+                    # wait and try to re-establish the listener
+                    # - will either return on success or raise a CommandError if
+                    # it can't connect within the specified time/number of retries
+                    self.reconnect_listener()
+                        
             #Process the index queue for any items that need it.
             self.process_queue()
+
+            # if we've received an interrupt and there is nothing queued to index,
+            # quit
+            if self.interrupted and not self.to_index:
+                return
+
 
 
     def reconnect_listener(self):
@@ -300,3 +331,25 @@ class Command(BaseCommand):
             for pid in queue_remove:
                 del self.to_index[pid]
                             
+
+    def interrupt_handler(self, signum, frame):
+        '''Gracefully handle a SIGINT, if possible.  Reports status if
+        main loop is currently part-way through pages for a volume,
+        sets a flag so main script loop can exit cleanly, and restores
+        the default SIGINT behavior, so that a second interrupt will
+        stop the script.
+        '''
+        if signum == signal.SIGINT:
+            # restore default signal handler so a second SIGINT can be used to quit
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            # set interrupt flag so main loop knows to quit as soon as it can
+            self.interrupted = True
+
+            # report if indexer currently has items queued for indexing
+            if self.to_index:
+                msg = '\n%d item(s) queued to be indexed.\n' % len(self.to_index.keys())
+                msg += 'Indexer will stop listening for updateds, and will exit when currently queued items have been indexed.\n'
+                msg += '(Ctrl-C / Interrupt again to quit immediately)\n'
+                self.stdout.write(msg)
+                self.stdout.flush()
+
