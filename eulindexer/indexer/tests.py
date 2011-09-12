@@ -16,6 +16,7 @@
 
 from cStringIO import StringIO
 from datetime import timedelta
+import httplib2
 from mock import Mock, patch, DEFAULT
 from os import path
 from socket import error as socket_error
@@ -265,6 +266,7 @@ class SiteIndexTest(TestCase):
         mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(index_config)
         index = SiteIndex(site_url)
         self.assertEqual(site_url, index.site_url)
+        # now initialized with 
         mockurllib.urlopen.assert_called_with(site_url)
         self.assertEqual(index_config['SOLR_URL'], index.solr_url,
                          'SiteIndex solr url should be configured based on data returned from url call')
@@ -272,7 +274,12 @@ class SiteIndexTest(TestCase):
             self.assert_(set(cmodel_group) in index.content_models,
                          'each group of content models from indexdata should be present in SiteIndex content models')
 
-        mocksunburnt.SolrInterface.assert_called_with(index_config['SOLR_URL'])
+        # solr connection now initialized with custom httplib2.Http instance
+        # test args/kwargs discretely
+        solr_args, solr_kwargs = mocksunburnt.SolrInterface.call_args
+        self.assertEqual(index_config['SOLR_URL'], solr_args[0],
+            'solr connection should be initialized via solr url from index configuration')
+        self.assert_(isinstance(solr_kwargs['http_connection'], httplib2.Http))
         self.assertEqual('solr interface', index.solr_interface)
 
 
