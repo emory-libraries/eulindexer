@@ -245,10 +245,23 @@ class Command(BaseCommand):
         if method == 'purgeObject':
             # since we don't know which index (if any) this object was indexed in,
             # delete it from all configured indexes
-            for index in self.indexes.itervalues():
-                # pid is the required solr id in the base DigitalObject; assuming people won't change that
-                index.solr_interface.delete({'pid': pid})
-                # TODO: index error if we get a SolrError here
+            for site, index in self.indexes.iteritems():
+                try:
+                    # pid is the required solr id in the base DigitalObject; assuming people won't change that
+                    index.solr_interface.delete({'pid': pid})
+                except Exception as e:
+                    logging.error("Failed to purge %s (%s): %s" % \
+                                      (pid, site, e))
+
+                    # Add a prefix to the detail error message if we
+                    # can identify what type of error this is.
+                    detail_type = ''
+                    if isinstance(e, SolrError):
+                        detail_type = 'Solr Error: '
+                    action_str = 'Purge: '
+                    msg = '%s%s%s' % (detail_type, action_str, e)
+                    err = IndexError(object_id=pid, site=site, detail=msg)
+                    err.save()
             logger.info('Deleting %s from all configured Solr indexes' % pid)
             # commit?
             
