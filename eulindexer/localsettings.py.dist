@@ -1,8 +1,5 @@
-from os import path
-
-# Get the directory of this file for relative dir paths.
-# Django sets too many absolute paths.
-BASE_DIR = path.dirname(path.abspath(__file__))
+# Site base url, when not deployed at root url (e.g., '/eulindexer' )
+SITE_URL_PREFIX = ''
 
 # Django settings for indexer project.
 
@@ -91,7 +88,7 @@ LOGGING = {
         'django': {
             'handlers':['null'],
             'propagate': True,
-            'level':'DEBUG',
+            'level':'INFO',
         },
         'django.request': {
             'handlers': ['mail_admins'],
@@ -101,12 +98,12 @@ LOGGING = {
         'eulfedora': {
             'handlers':['console'],
             'propagate': True,
-            'level':'DEBUG',
+            'level':'INFO',
         },
         'eulindexer': {
             'handlers':['console'],
             'propagate': True,
-            'level':'DEBUG',
+            'level':'INFO',
         }
     }
 }
