@@ -247,8 +247,7 @@ class Command(BaseCommand):
             # delete it from all configured indexes
             for site, index in self.indexes.iteritems():
                 try:
-                    # pid is the required solr id in the base DigitalObject; assuming people won't change that
-                    index.solr_interface.delete({'pid': pid})
+                    index.delete_item(pid)
                 except Exception as e:
                     logging.error("Failed to purge %s (%s): %s" % \
                                       (pid, site, e))

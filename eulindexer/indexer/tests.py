@@ -126,14 +126,9 @@ class IndexerTest(TestCase):
         index_count = len(self.command.indexes)
         testpid = 'testpid:1'
         self.command.process_message(testpid, 'purgeObject')
-        # delete should be called on every solr interface
-        indexconfig1.solr_interface.delete.assert_called()
-        indexconfig2.solr_interface.delete.assert_called()
-        # mock's assert_called_with seems to have trouble comparing a dictionary arg
-        args, kwargs = indexconfig1.solr_interface.delete.call_args
-        self.assertEqual({'pid': testpid}, args[0],
-                         'solr delete should be called with pid passed in for processing')
-
+        # delete should be called on every site index
+        indexconfig1.delete_item.assert_called_with(testpid)
+        indexconfig2.delete_item.assert_called_with(testpid)
 
     def test_process_queue(self):
         # test basic index queue processing
@@ -347,6 +342,21 @@ class SiteIndexTest(TestCase):
         mockurllib.urlopen.side_effect = Exception
         # error on attempt to read index data should be raised as a recoverable error
         self.assertRaises(IndexDataReadError, index.index_item, testpid)
+
+
+    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.sunburnt')
+    def test_delete_item(self, mocksunburnt, mockurllib):
+        # return empty json data for index init/load config
+        mockurllib.urlopen.return_value.read.return_value = '{}'
+        index = SiteIndex('test-site-url')
+        index.solr_interface = Mock()
+        keyfield = 'Pid'
+        index.solr_interface.schema.unique_field.name = keyfield
+        testpid = 'test:abc1'
+        index.delete_item(testpid)
+        index.solr_interface.delete.assert_called_with({keyfield: testpid})
+
 
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')

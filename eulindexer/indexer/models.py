@@ -188,7 +188,7 @@ class SiteIndex(object):
         try:
             start = time.time()
             self.solr_interface.add(index_data)
-            logger.debug('updated solr: %f sec' % (time.time() - start))
+            logger.debug('Updated Solr: %f sec' % (time.time() - start))
         except SolrError as se:
             logger.error('Error indexing for %s: %s' % (pid, se))
             raise
@@ -198,7 +198,19 @@ class SiteIndex(object):
         # Return that item was successfully indexed
         return True
 
-
+    def delete_item(self, pid):
+        '''Delete an item (identified by pid) from the Solr index.
+        Uses the unique field from the configured Solr schema (e.g.,
+        ``pid`` or ``PID``) to remove the specified item from the
+        index.  If an error occurs on deletion, a
+        :class:`sunburnt.SolrError` may be raised.
+        
+        :param pid - the pid of the object to remove from the index
+        '''
+        logger.info('Deleting %s=%s' % \
+                    (self.solr_interface.schema.unique_field.name, pid))
+        self.solr_interface.delete({self.solr_interface.schema.unique_field.name: pid})
+        
 def init_configured_indexes():
     '''Initialize a :class:`SiteIndex` for each site configured
     in Django settings.
