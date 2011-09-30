@@ -269,14 +269,19 @@ class Command(BaseCommand):
             # if the object isn't already in the queue to be indexed, check if it should be
             if pid not in self.to_index:
                 # get content models from resource index
-                obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid, modelns.hasModel))
+                obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid,
+                                                                  modelns.hasModel))
                 # may include generic content models, but should not be a problem
 
-                # check if the content models match one of the object types we are indexing
+                # find which configured site(s) index the item
                 for site, index in self.indexes.iteritems():
                     if index.indexes_item(obj_cmodels):
-                        self.to_index[pid] = {'time': datetime.now(), 'site': site, 'tries': 0}
-                        break
+                        if pid not in self.to_index:
+                            # first site found - create a queue item and add to the list
+                            self.to_index[pid] = QueueItem(site)
+                        else:
+                            # subsequent site - add the site to the existing queue item
+                            self.to_index[pid].add_site(site)
 
     def process_queue(self):
         '''Loop through items that have been queued for indexing; if
@@ -286,67 +291,90 @@ class Command(BaseCommand):
         if self.to_index:
             logger.debug('Objects queued to be indexed: %s' % ', '.join(self.to_index.keys()))
 
-            queue_remove = []	
+            queue_remove = []
             for pid in self.to_index.iterkeys():
-                try:
-                    # if we've waited the configured delay time, attempt to index
-                    if datetime.now() - self.to_index[pid]['time'] >= self.index_delta:
-                        logger.debug('Triggering index for %s' % pid)
-                        # tell the site index to index the item - returns True on success
-                        if self.indexes[self.to_index[pid]['site']].index_item(pid):
-                            queue_remove.append(pid)
-                        
-                except RecoverableIndexError as rie:
-                    # If the index attempt resulted in error that we
-                    # can potentially recover from, keep the item in
-                    # the queue and attempt to index it again.
+                # if we've waited the configured delay time, attempt to index
+                if datetime.now() - self.to_index[pid].time >= self.index_delta:
+                    logger.debug('Triggering index for %s' % pid)
 
-                    # Increase the count of index attempts, so we know when to stop.
-                    self.to_index[pid]['tries'] += 1
+                    # a single object could be indexed by multiple sites; index all of them
+                    for site in self.to_index[pid].sites_to_index:
+                        self.index_item(pid, self.to_index[pid], site)
                     
-                    # quit when we reached the configured number of index attempts
-                    if self.to_index[pid]['tries'] >= self.index_max_tries:
-                        logging.error("Failed to index %s (%s) after %d tries: %s" % \
-                                     (pid, self.to_index[pid]['site'], self.to_index[pid]['tries'], rie))
-                        
-                        err = IndexError(object_id=pid, site=self.to_index[pid]['site'],
-                                         detail='Failed to index after %d attempts: %s' % \
-                                         (self.to_index[pid]['tries'], rie))
-                        err.save()
-                        # we've hit the index retry limit, so remove from the queue
+                    if not self.to_index[pid].sites_to_index:
+                        # if all configured sites indexed successfully
+                        # or failed and should not be re-indexed,
+                        # store pid to be removed from the queue
                         queue_remove.append(pid)
-                        
-                    else:
-                        logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s" % \
-                                     (pid, self.to_index[pid]['site'], self.to_index[pid]['tries'], rie))
-
-                        # update the index time - wait the configured index delay before
-                        # attempting to reindex again
-                        self.to_index[pid]['time'] = datetime.now()
-                    
-                except Exception as e:
-                    logging.error("Failed to index %s (%s): %s" % \
-                                      (pid, self.to_index[pid]['site'], e))
-
-                    # Add a prefix to the detail error message if we
-                    # can identify what type of error this is.
-                    detail_type = ''
-                    if isinstance(e, SolrError):
-                        detail_type = 'Solr Error: '
-                    msg = '%s%s' % (detail_type, e)
-                    err = IndexError(object_id=pid, site=self.to_index[pid]['site'],
-                                     detail=msg)
-                    err.save()
-
-                    # any exception not caught in the recoverable error block should be
-                    # removed from the index queue
-                    queue_remove.append(pid)
 
 
             # clear out any pids that were indexed successfully OR
             # errored from the list of objects still to be indexed
             for pid in queue_remove:
                 del self.to_index[pid]
+
+    def index_item(self, pid, queueitem, site):
+        '''Index an item in a single configured site index and handle
+        any errors, updating the queueitem retry count and marking
+        sites as indexed according to success or any errors.
+
+        :param pid: pid for the item to be indexed
+        :param queueitem: :class:`QueueItem`
+        :param site: name of the site index to use
+        '''
+        try:
+            # tell the site index to index the item - returns True on success
+            if self.indexes[site].index_item(pid):
+                # mark the site index as complete on the queued item
+                self.to_index[pid].site_complete(site)
+                
+        except RecoverableIndexError as rie:
+            # If the index attempt resulted in error that we
+            # can potentially recover from, keep the item in
+            # the queue and attempt to index it again.
+            
+            # Increase the count of index attempts, so we know when to stop.
+            self.to_index[pid].tries += 1
+                    
+            # quit when we reached the configured number of index attempts
+            if self.to_index[pid].tries >= self.index_max_tries:
+                logging.error("Failed to index %s (%s) after %d tries: %s" % \
+                              (pid, site, self.to_index[pid].tries, rie))
+                
+                err = IndexError(object_id=pid, site=site,
+                                 detail='Failed to index after %d attempts: %s' % \
+                                 (self.to_index[pid].tries, rie))
+                err.save()
+                # we've hit the index retry limit, so set site as complete on the queue item
+                self.to_index[pid].site_complete(site)
+                
+            else:
+                logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s" % \
+                             (pid, site, self.to_index[pid].tries, rie))
+                
+                # update the index time - wait the configured index delay before
+                # attempting to reindex again
+                self.to_index[pid].time = datetime.now()
+                
+        except Exception as e:
+            logging.error("Failed to index %s (%s): %s" % \
+                          (pid, site, e))
+            
+            # Add a prefix to the detail error message if we
+            # can identify what type of error this is.
+            detail_type = ''
+            if isinstance(e, SolrError):
+                detail_type = 'Solr Error: '
+            msg = '%s%s' % (detail_type, e)
+            err = IndexError(object_id=pid, site=site,
+                             detail=msg)
+            err.save()
+                
+            # any exception not caught in the recoverable error block
+            # should not be attempted again - set site as complete on queue item
+            self.to_index[pid].site_complete(site)
+                
+            
                             
 
     def interrupt_handler(self, signum, frame):
@@ -387,3 +415,38 @@ class Command(BaseCommand):
             # reload site indexes
             self.init_indexes()
 
+
+
+class QueueItem(object):
+    # simple object to track an item queued for indexing
+    
+    def __init__(self, *sites):
+        # time queued for indexing
+        self.time = datetime.now()
+        # number of attemps to index this item
+        self.tries = 0
+        # name of the sites that the queued item should be indexed in
+        self.sites = set(sites)
+        # sites where indexing has been completed (either success or
+        # failure that should not be retried)
+        self.complete_sites = set()
+        
+    def add_site(self, site):
+        # add a site to the set of sites this queued item should be indexed in
+        self.sites.add(site)
+
+    def site_complete(self, site):
+        # mark a site as complete
+        self.complete_sites.add(site)
+
+    @property
+    def sites_to_index(self):
+        # sites still to be indexed - configured sites without complete sites
+        return self.sites - self.complete_sites
+
+    def __unicode__(self):
+        return u'%s sites=%s (%d tries)' % \
+               (self.time, ', '.join(self.sites), self.tries)
+    
+    def __repr__(self):
+        return u'<QueueItem: %s >' % unicode(self)
