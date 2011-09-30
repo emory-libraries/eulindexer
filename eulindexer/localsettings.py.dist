@@ -1,6 +1,8 @@
 # Site base url, when not deployed at root url (e.g., '/eulindexer' )
 SITE_URL_PREFIX = ''
 
+EMAIL_SUBJECT_PREFIX = '[EULindexer] '
+
 # Django settings for indexer project.
 
 DATABASES = {
