@@ -14,6 +14,43 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+'''
+
+To index or reindex a specific set of objects, use the **reindex**
+command::
+
+  $ python manage.py reindex  
+
+The objects to be reindexed can be specified in one of the following ways:
+
+* A list of specific pids to be indexed::
+
+  $ python manage.py reindex  pid:1 pid:2 pid:3 ...
+
+  Those objects (and only those) will be indexed in whichever of the
+  configured sites index them.
+
+* A single configured site::
+
+  $ python manage.py reindex  -s/--site sitename
+
+  All objects from the configured site (currently identified by
+  finding objects with any of the content models that site indexes)
+  will be indexed, in that site only.
+
+* A single fedora content model::
+
+  $ python manage.py reindex  -c/--content-model info:fedora/cmodel:My-Object
+
+  All objects with the requested content model will be indexed in any
+  of the configured sites that claim them.
+
+Use ``python manage.py reindex -h`` for more details.
+
+----
+'''
+
+
 from datetime import datetime, timedelta
 from optparse import make_option
 from rdflib import URIRef

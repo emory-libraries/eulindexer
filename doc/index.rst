@@ -20,6 +20,7 @@ Contents
     :maxdepth: 4
 
     readme.rst
+    changelog.rst
     deploynotes.rst
     apidocs.rst
 
