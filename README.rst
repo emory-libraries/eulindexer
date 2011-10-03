@@ -1,191 +1,127 @@
 Readme
 ======
 
-EULindexer is currently highly experimental code going through rapid development.
-It is not recommended to use this code base until our internal testing on this
-code has been completed and this message has been removed.
+EULindexer is currently experimental code going through development
+and preliminary production deployment.  It is not recommended to use
+this code base until our internal testing on this code has been
+completed and this message has been removed.
 
-EULindexer is a module that takes a JSON response (documented below) and deposits the data
-in that response in an index. For this initial implementation, `EULfedora <https://github.com/emory-libraries/eulfedora>`_
-provides the webservice that will return the fedora object data it wants
-indexed. Meanwhile, Solr is the index that will be used. Theoretically,
-EULindexer can be used with other compatible services than just the above.
+EULindexer manages and coordinates index updates content that is
+indexed by multiple sites and in multiple Solr instances, normally
+triggered by an object update; this is done by way of a very simple
+JSON service (format documented below) for passing configuration and
+indexing data. In the current implementation, `EULfedora
+<https://github.com/emory-libraries/eulfedora>`_ provides a webservice
+that can be used for indexing, and Solr is used for
+indexing, but EULindexer can be used with any site that provides JSON
+data in the required format.
 
+Components
+----------
 
-Running the Indexer
--------------------
-
-To use the indexer, from the directory with manage.py, do:
-
-  $ python manage.py indexer
-
-Available options that can be specified are as follows: ::
-  
-  --max-reconnect-retries
-      This is a numeric entry that specifies how many times to try to reconnect
-      to Fedora if the connection is lost. The current default is: 5. ::
-
-  --retry-reconnect-wait
-      This is a numeric entry that specifies the wait time between Fedora connection
-      retry attempts. The current default is: 5. ::
-
-  --index-max-tries
-      This is the maximum amount of times the indexer will attempt to reindex an item
-      before giving up on it and logging an error. Retrying a failed object is useful
-      when an application that handles that object's index is restarting. The current 
-      default is: 3.
+:mod:`eulindexer` currently consists of one primary script,
+:mod:`~eulindexer.indexer.management.commands.indexer`, a helper
+script :mod:`~eulindexer.indexer.management.commands.reindex`, and a
+minimal web application that exposes Django's
+:mod:`django.contrib.admin` interface for reviewing errors logged in
+the database by either of the indexing scripts.
 
 
-Reindex individual PIDs or an entire Site
------------------------------------------
 
-To reindex, the following command is made available:
+Index data service format
+-------------------------
 
-  $ python manage.py reindex
+Any site configured in **INDEXER_SITE_URLS** in ``localsettings.py``
+will be expected to respond to two types of requests, as documented
+below.
 
-At least one of the following two options is required: ::
-  
-  <pid pid ...>
-      This is a list of pids to reindex. Only those pids specified will be reindexed. ::cd d
+Index Configuration
+^^^^^^^^^^^^^^^^^^^
 
-  -s (--site)
-      This the name of a site currently configured in the localsettings.py. ALL objects
-      from that site will be reindexed.
+When the :mod:`~eulindexer.indexer.management.commands.indexer` or
+:mod:`~eulindexer.indexer.management.commands.reindex` scripts start
+up, they will query the sites configured as **INDEXER_SITE_URLS** at
+the exact url configured in ``localsettings.py``.  That url is
+expected to respond with a JSON object that consists of the
+**SOLR_URL** where this site wants content indexed and a list of
+**CONTENT_MODELS** that will be used to identify the types of objects
+this site indexes.  
 
-
-Expected JSON Responses
------------------------
-
-This application expects two distinct responses to -queries the indexer will make. This allows
-an application that does not use eulfedora to simple code to this keyhole. Applications
-that don't even support Python can be programmed to return these responses.
-
-Configuration Response
-^^^^^^^^^^^^^^^^^^^^^^
-
-The first is querying a site's indexdata url with no arguments. An example might be:
-http://localhost/myapp/indexdata/ . That URL will return a dictionary the consists of
-SOLR_URL and CONTENT_MODELS. The SOLR_URL is just the absolute url to the SOLR instance
-that the data should be placed into. The CONTENT_MODELS is a bit more complicated: it is 
-a list of content model groups, or basically a list of a list. 
-
-To be explain the CONTENT_MODELS, let's assume our repository handled two object types,
-DOCUMENTS and VIDEOS. The DOCUMENTS object has a content model of "text" and the
-VIDEOS object has content models "visual" and "audio". In that case, the following might
-be returned: ::
+The **CONTENT_MODELS** portion of the response should be a list of
+lists, where each list is the combination of content models required
+to identify an object that the site indexes.  For example, if a site
+indexes text content and audio-visual content (but not audio-only or
+visual-only), it might return something like this::
 
   {
-    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
+    "SOLR_URL": "http://localhost:8983/solr/myapp",
     "CONTENT_MODELS": [
-                         ["text"], 
-                         ["visual", "audio"]
-                      ]
+                         ["info:fedora/cmodel:text"],      
+                         ["info:fedora/cmodel:visual", "info:fedora/cmodel:audio"]
+                      ]  
   }
 
-If we only had the DOCUMENTS object supported in our application and no VIDEOS, then
-the JSON Response would be: ::
+When :mod:`~eulindexer.indexer.management.commands.indexer` identifies
+objects that have the text content model or *both* the visual and
+audio content models (and possibly others), it will attempt to index
+them in this site.  Note that the order of the content models is not
+significant; they simply act as a composite key to identify an object
+from Fedora.
+
+Index data
+^^^^^^^^^^
+
+When either of the indexing scripts identify an object to be indexed
+by a particular configured site, they will query the site for the data
+that should be sent to the Solr index.  Based on the url set for a
+particular site in **INDEXER_SITE_URLS**, the indexer will query for
+``/pid/``; e.g., if the url configured in ``localsettings.py`` is::
+
+    http://localhost/myapp/indexdata/ 
+
+For an object with pid ``test:123``, the :mod:`eulindexer` will
+request index data at::
+
+    http://localhost/myapp/indexdata/test:123/
+
+This url is expected to return a JSON object with index data as field:
+value, e.g. ::
 
   {
-    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-    "CONTENT_MODELS": [
-                         ["text"]
-                      ]
-  }
-
-If Documents suddenly started to have a "visual" content model in addition to its
-"document" content model, then the JSON Response would be: ::
-
-  {
-    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-    "CONTENT_MODELS": [
-                         ["text", "visual"], 
-                         ["visual", "audio"]
-                      ]
-  }
-
-For a completely generic example: ::
-
-  {
-    "SOLR_URL": <url to solr, such as http://localhost/solr/app>,
-    "CONTENT_MODELS": [
-                         ["Content Model #1", "Content Model #2"],
-                         ["Content Model #3"], 
-                         ["Content Model #4", "Content Model #1"]
-                      ]
-  }
-
-It is worth noting that the order the content models are returned in do not
-matter. They simply act as a "composite key" to identify an object from 
-Fedora and require that object from fedora have at least those models
-associated with it.
-
-Index Response
-^^^^^^^^^^^^^^
-
-The second is querying a site's indexdata url with a <pid> at the end. An 
-example might be: http://localhost/myapp/indexdata/<pid>, or using this
-organization as an example with a fake pid of emory:1A1A2, 
-http://localhost/myapp/indexdata/emory:1A1A2
-
-This will return a JSON dictionary in the form of 
-"solr_field_name":"value_to_put_in_field". For an example, we will assume 
-our Solr uses the fields "PID", "Title", and "Description". Besides the
-fake pid above of emory:1A1A2, our object has a title of "Emory University"
-with a description of "A University located in the Southeast.": ::
-
-  {
-    "PID":"emory:1A1A2",
-    "Title":"Emory University",
-    "Description": "A University located in the Southeast."
+    "pid":"test:123",
+    "title":"Emory University",
+    "description": "A University located in the Southeast."
   }  
 
-For a completely generic version: ::
+Any JSON content in this format (including, e.g., lists for values)
+can be used, as long as it matches the field names in the configured
+Solr schema for this site.  The JSON content is converted to an
+equivalent python object and passed to the :mod:`sunburnt`
+:meth:`sunburnt.sunburnt.SolrInterface.add` method.
 
-  {
-    "PID":"<pid>",
-    "Title":"<title>",
-    "Description": "<description>"
-  }
+.. Note::
 
-Additionally, please note that any valid JSON format for value
-should work. For example, we could add a field "ContentModels"
-with a list: ::
+  :mod:`eulindexer` does not send Solr a ``commit`` message, as that
+  can be handled much more efficiently and directly by Solr.  
 
-  {
-    "PID":"<pid>",
-    "Title":"<title>",
-    "Description": "<description>",
-    "ContentModels": ["Content Model #1", "Content Model #2"]
-  }
+If the indexer encounters an error on indexing an individual item,
+either when requesting the index data or sending that data to Solr, it
+will do as follows: if the error is potentially recoverable, it will
+attempt to reindex it (using the configured retry); if retries fail,
+or the error is not recoverable, it will remove the item from the
+index queue and log an :class:`~eulindexer.indexer.models.IndexError`
+in the database for review.
 
 
 Using with EULFedora
 --------------------
 
-`EULfedora <https://github.com/emory-libraries/eulfedora>`_ has support for the above two views already built into it.
-The code for this functionality can be found under <eulfedora_base>/eulfedora/indexdata.
-The documentation is located within the views.py file. Of note, besides following the url mapping
-and adding the settings mentioned in those documents, your objects must extend
-their own index_data methods. 
-
-
-PDF Text Stripping Support
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-There is currently prototype support in `EULfedora <https://github.com/emory-libraries/eulfedora>`_ for getting the text out
-of PDFs. This can be useful to allow for searching on the content of
-the PDF within a SOLR index. To do this, simply include the following
-in a project that intends to return the content from a PDF:
-
-from eulfedora.indexdata.util import pdf_to_text
-
-To use on a file, the syntax is:
-  text = pdf_to_text(open(pdf_filepath, 'rb'))
-
-To use on a datastream from EULFedora, the syntax is:
-  pdfobj = repository.get_object(pid)
-  text = pdf_to_text(pdfobj.pdf.content)
-
+Current versions of `EULfedora
+<https://github.com/emory-libraries/eulfedora>`_ have support for the
+:mod:`eulindexer` index-data service, which can be enabled and
+extended in any project using :mod:`eulfedora` with :mod:`django`.
+The code and documentation for this functionality can be found in
+:mod:`eulfedora.indexdata`.
 
 Dependencies
 ------------

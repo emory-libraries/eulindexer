@@ -14,6 +14,35 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+'''
+The **indexer** should be started via manage.py::
+
+  $ python manage.py indexer
+
+The **indexer** will load index configurations from the sites
+configured in ``localsettings.py``, initialize Solr connections, and
+start listening to the configured Fedora STOMP port for changes that
+should trigger an index update.
+
+Available options (use ``python manage.py indexer -h`` for more
+details)::
+
+  --max-reconnect-retries
+     The number of times the indexer should attempt to reconnect to
+     Fedora if the connection is lost.
+
+  --retry-reconnect-wait
+     The time that the indexer should wait between attempts to
+     reconnect to Fedora if the connection is lost.
+
+  --index-max-tries
+  
+     The number of times the indexer will attempt to index an item
+     when a potentially recoverable error is encountered.
+
+----
+'''
+
 from datetime import datetime, timedelta
 import logging
 import os

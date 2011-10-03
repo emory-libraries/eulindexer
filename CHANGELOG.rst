@@ -1,5 +1,6 @@
 .. _CHANGELOG:
-
+Change Log
+==========
 
 Release 0.2
 -----------
@@ -12,7 +13,12 @@ Release 0.2
   configuring :mod:`httplib2` with a specific SSL Cert file in order
   to support connecting to SSL Solr instances with certificates that
   :mod:`httplib2` does not recognize.
-* Signal handlers for SIGINT and SIGHUP in the ``indexer`` script.
+* Signal handlers for SIGINT and SIGHUP in the ``indexer`` script:
+  * on SIGINT, ``indexer`` will attempt to stop gracefully (index any
+    currently items queued for indexing, but not listen for any new
+    items).
+  * on SIGHUP, ``indexer`` will reload the configured site index
+    configurations and re-initialize Solr connections.
 * Support indexing a single item by multiple sites.
 * Improved sample apache configuration and fabric deploy file.
 
