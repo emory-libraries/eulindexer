@@ -29,7 +29,6 @@ from django.conf import settings
 from django.core.management.base import CommandError
 from django.test import Client, TestCase
 
-from eulfedora.models import DigitalObject, FileDatastream
 from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer, reindex

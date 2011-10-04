@@ -61,7 +61,6 @@ from django.conf import settings
 from django import conf
 
 from eulfedora.rdfns import model as modelns
-from eulfedora.models import DigitalObject
 from eulfedora.server import Repository
 
 from django.utils import simplejson
