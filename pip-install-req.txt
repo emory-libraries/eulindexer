@@ -1,5 +1,5 @@
 django
--e git://github.com/emory-libraries/eulfedora.git#egg=eulfedora
+eulfedora
 sunburnt
 httplib2
 stompest
