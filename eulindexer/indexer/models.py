@@ -1,4 +1,4 @@
-# file eulindexer/indexer/manage.py
+# file eulindexer/indexer/models.py
 # 
 #   Copyright 2010,2011 Emory University Libraries
 #

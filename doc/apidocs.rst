@@ -11,7 +11,7 @@ Indexer Service
 .. automodule:: eulindexer.indexer.management.commands.indexer
     :members:
 
-Reindex Command(s)
+Reindex Command
 ^^^^^^^^^^^^^^^^^^
 .. automodule:: eulindexer.indexer.management.commands.reindex
     :members:

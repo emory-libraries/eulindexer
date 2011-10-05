@@ -29,10 +29,10 @@ from django.conf import settings
 from django.core.management.base import CommandError
 from django.test import Client, TestCase
 
-from eulfedora.models import DigitalObject, FileDatastream
 from eulfedora.server import Repository
 
 from eulindexer.indexer.management.commands import indexer, reindex
+from eulindexer.indexer.management.commands.indexer import QueueItem
 from eulindexer.indexer.models import SiteIndex, IndexError, \
 	init_configured_indexes, IndexDataReadError, SiteUnavailable
 
@@ -67,7 +67,8 @@ class IndexerTest(TestCase):
                 delattr(settings, cfg)
             else:
                 setattr(settings, cfg, original_value)
-            
+
+        IndexError.objects.all().delete()
 
     def test_startup_error(self):
         # simulate a socket error (fedora not running/configured properly)
@@ -137,8 +138,8 @@ class IndexerTest(TestCase):
         pid2 = 'indexer-test:test2'
         site = 'site1'
         index_queue = {        # sample test index queue
-            pid1: {'time': datetime.now(), 'site': site},
-            pid2: {'time': datetime.now(), 'site': site}
+            pid1: QueueItem(site),
+            pid2: QueueItem(site)
         }
         self.command.to_index = index_queue.copy()
         # mock the site index so we can control index success/failure
@@ -158,12 +159,62 @@ class IndexerTest(TestCase):
         self.assertEqual({}, self.command.to_index,
                          'to_index queue should be empty when all items are indexed')
 
+    def test_process_queue_multisite(self):
+        # test support for indexing one item in multiple sites
+        pid1 = 'indexer-test:test1'
+        pid2 = 'indexer-test:test2'
+        site = 'site1'
+        site2 = 'site2'
+        index_queue = {        # sample test index queue
+            pid1: QueueItem(site, site2),
+        }
+        self.command.to_index = index_queue.copy()
+        # mock the site indexes so we can control index success/failure
+        self.command.indexes = {
+            site: Mock(SiteIndex),
+            site2: Mock(SiteIndex)
+        }
+
+        # site 1 will suceed on everything, site 2 will fail
+        # configure delay so all items will be indexed
+        self.command.index_delta = timedelta(days=0)
+        self.command.indexes[site].index_item.return_value = True
+        self.command.indexes[site2].index_item.return_value = False
+        self.command.process_queue()
+        # index_item should be called on both sites 
+        self.command.indexes[site].index_item.assert_called()
+        self.command.indexes[site2].index_item.assert_called()
+
+        # inspect updated queue item
+        q_item = self.command.to_index[pid1]
+
+        self.assert_(site in q_item.complete_sites)
+        self.assert_(site2 not in q_item.complete_sites)
+        self.assert_(pid1 in self.command.to_index,
+            'item should still be queued for indexing when only one site succeeded')
+
+        # reset mocks
+        self.command.indexes[site].reset_mock()
+        self.command.indexes[site2].reset_mock()
+        # set *both* sites to succeed
+        self.command.indexes[site].index_item.return_value = True
+        self.command.indexes[site2].index_item.return_value = True
+        # process the queue again
+        self.command.process_queue()
+        # index_item should be called on both sites 
+        self.command.indexes[site].index_item.assert_not_called()
+        self.command.indexes[site2].index_item.assert_called()
+        
+        self.assertEqual({}, self.command.to_index,
+                         'to_index queue should be empty when items are indexed in all sites')
+
+
     def test_process_queue_error(self):
         # test error logging - generic error (e.g., connection errror or JSON load failure)
         testpid = 'pid:1'
         site = 'testproj'
         err_msg = 'Failed to load index data'
-        self.command.to_index = {testpid: {'site': site, 'time': datetime.now()}}
+        self.command.to_index = {testpid: QueueItem(site)}
         self.command.index_delta = timedelta(seconds=0)
         self.command.indexes = {site: Mock(SiteIndex)}
 
@@ -177,12 +228,39 @@ class IndexerTest(TestCase):
         self.assertEqual(err_msg, indexerr.detail,
                          'index error detail should include full exception message')
 
+    def test_process_queue_error_multisite(self):
+        # error logging for an item indexed in multiple sites
+        testpid = 'pid:1'
+        site = 'testproj'
+        site2 = 'generic-search'
+        err_msg = 'Failed to load index data'
+        self.command.to_index = {testpid: QueueItem(site, site2)}
+        self.command.index_delta = timedelta(seconds=0)
+        self.command.indexes = {
+            site: Mock(SiteIndex),
+            site2: Mock(SiteIndex),
+        }
+
+        # simulate error on index attempt
+        self.command.indexes[site].index_item.side_effect = Exception(err_msg)
+        self.command.indexes[site2].index_item.side_effect = Exception(err_msg)
+        self.command.process_queue()
+
+        # an IndexError object should have been created for this pid
+        # for *each* site that errored
+        indexerr = IndexError.objects.get(object_id=testpid, site=site)
+        self.assertEqual(err_msg, indexerr.detail,
+                         'index error detail should include full exception message')
+        indexerr = IndexError.objects.get(object_id=testpid, site=site2)
+        self.assertEqual(err_msg, indexerr.detail,
+                         'index error should be created for *each* site')
+
     def test_process_queue_solrerror(self):
         # test error logging - solr error when indexing is attempted
         testpid = 'pid:2'
         site = 'testproj2'
         err_msg = 'Required fields are unspecified: "id"'
-        index_queue = {testpid: {'site': site, 'time': datetime.now()}}
+        index_queue = {testpid: QueueItem(site)}
         self.command.to_index = index_queue.copy()
         # configure time delay to 0 so indexer will attempt to index
         self.command.index_delta = timedelta(seconds=0)
@@ -205,7 +283,7 @@ class IndexerTest(TestCase):
         testpid = 'pid:1'
         site = 'testproj'
         err_msg = 'Failed to load index data'
-        self.command.to_index = {testpid: {'site': site, 'tries': 0, 'time': datetime.now()}}
+        self.command.to_index = {testpid: QueueItem(site)}
         # configure to only try twice
         self.command.index_max_tries = 2
         self.command.index_delta = timedelta(seconds=0)
@@ -217,7 +295,7 @@ class IndexerTest(TestCase):
         self.command.process_queue()
         self.assert_(testpid in self.command.to_index,
                      'on a recoverable error, pid should still be index queue')
-        self.assertEqual(1, self.command.to_index[testpid]['tries'],
+        self.assertEqual(1, self.command.to_index[testpid].tries,
                          'index attempt count should be tracked in index queue')
         self.assertEqual(0, IndexError.objects.filter(object_id=testpid).count(),
                          'recoverable error should not be logged to db on first attempt')

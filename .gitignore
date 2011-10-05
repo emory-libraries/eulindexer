@@ -4,3 +4,5 @@ build
 dist
 #ignore the docs _build directory
 doc/_build/
+static
+eulindexer/test-results

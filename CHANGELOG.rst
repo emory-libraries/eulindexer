@@ -1,4 +1,27 @@
 .. _CHANGELOG:
+Change Log
+==========
+
+Release 0.2
+-----------
+
+* Better error handling when deleting an object from the Solr index
+  (after a Fedora purgeObject).
+* Use the Solr unique field (as configured in the Solr schema) for
+  constructing the Solr delete request.
+* Added an optional Django setting, **SOLR_CA_CERT_PATH** to allow
+  configuring :mod:`httplib2` with a specific SSL Cert file in order
+  to support connecting to SSL Solr instances with certificates that
+  :mod:`httplib2` does not recognize.
+* Signal handlers for SIGINT and SIGHUP in the ``indexer`` script:
+  * on SIGINT, ``indexer`` will attempt to stop gracefully (index any
+    currently items queued for indexing, but not listen for any new
+    items).
+  * on SIGHUP, ``indexer`` will reload the configured site index
+    configurations and re-initialize Solr connections.
+* Support indexing a single item by multiple sites.
+* Improved sample apache configuration and fabric deploy file.
+
 
 Release 0.1 - Initial Release
 -----------------------------
