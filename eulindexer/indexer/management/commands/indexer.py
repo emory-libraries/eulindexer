@@ -205,7 +205,8 @@ class Command(BaseCommand):
                     # if there is a new message, process it
                     if data_available:
                         frame = self.listener.receiveFrame()
-                        # TODO: use message body instead of headers?  (includes datastream id for modify datastream API calls)
+                        # TODO: use message body instead of headers?
+                        # (includes datastream id for modify datastream API calls)
                         pid = frame['headers']['pid']
                         method = frame['headers']['methodName']
                         logger.info('Received message: %s - %s' % (method, pid))
@@ -213,11 +214,16 @@ class Command(BaseCommand):
                         
                         self.process_message(pid, method)
 
-                except StompFrameError as sfe:
-                    # this most likely indicates that Fedora is no longer available
-                    # peirodically attempt to reconnect (within some limits)
-                    
-                    logger.error('Received Stomp frame error "%s"' % sfe)
+                except Exception as e:
+                    # this most likely indicates that Fedora is no longer available;
+                    # periodically attempt to reconnect (within some limits)
+                    if isinstance(e, StompFrameError):
+                        logger.error('Received Stomp frame error "%s"' % e)
+                    else:
+                        # in some cases, getting a generic Exception "Connection Closed"
+                        # when Fedora shuts down
+                        logger.error('Error listening to Stomp: %s' % e)
+                        
                     # wait and try to re-establish the listener
                     # - will either return on success or raise a CommandError if
                     # it can't connect within the specified time/number of retries
