@@ -1,6 +1,6 @@
 from fabric.api import env, local, prefix, put, sudo, task, \
      require, puts, cd, run, abort
-from fabric.colors import green, red, cyan
+from fabric.colors import green, red, cyan, yellow
 from fabric.contrib import files
 from fabric.context_managers import cd, hide, settings
 import eulindexer
@@ -133,9 +133,26 @@ def configure_site():
 def update_links():
     'Update current/previous symlinks on the remote server.'
     with cd(env.remote_path):
-        if files.exists('current' % env):
+        if files.exists('current'):
             sudo('rm -f previous; mv current previous', user=env.remote_acct)
         sudo('ln -sf %(build_dir)s current' % env, user=env.remote_acct)
+
+@task
+def compare_localsettings(path=None, user=None):
+    'Compare current/previous (if any) localsettings on the remote server.'
+    configure(path, user)
+    with cd(env.remote_path):
+        # sanity-check current localsettings against previous
+        if files.exists('previous'):
+            with settings(hide('warnings', 'running', 'stdout', 'stderr'),
+                          warn_only=True):  # suppress output, don't abort on diff error exit code
+                output = sudo('diff current/eulindexer/localsettings.py previous/eulindexer/localsettings.py',
+                              user=env.remote_acct)
+                if output:
+                    puts(yellow('WARNING: found differences between current and previous localsettings.py'))
+                    puts(output)
+                else:
+                    puts(green('No differences between current and previous localsettings.py'))
 
 
 def build_source_package(path=None, user=None, url_prefix='', remote_proxy=''):
@@ -170,6 +187,7 @@ def deploy(path=None, user=None, url_prefix='', remote_proxy=''):
     setup_virtualenv()
     configure_site()
     update_links()
+    compare_localsettings()
 
     puts(green('Successfully deployed %(build_dir)s to %(host)s' % env))
 
@@ -177,13 +195,14 @@ def deploy(path=None, user=None, url_prefix='', remote_proxy=''):
 def revert(path=None, user=None):
     """Update remote symlinks to retore the previous version as current"""
     configure(path, user)
-    # if there is a previous link, shift current to previous
-    if files.exists('previous'):
-        # remove the current link (but not actually removing code)
-        sudo('rm current', user=env.remote_acct)
-        # make previous link current
-        sudo('mv previous current', user=env.remote_acct)
-        sudo('readlink current', user=env.remote_acct)
+    with cd(env.remote_path):
+        # if there is a previous link, shift current to previous
+        if files.exists('previous'):
+            # remove the current link (but not actually removing code)
+            sudo('rm current', user=env.remote_acct)
+            # make previous link current
+            sudo('mv previous current', user=env.remote_acct)
+            sudo('readlink current', user=env.remote_acct)
 
 @task
 def clean():
