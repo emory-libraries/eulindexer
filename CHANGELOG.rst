@@ -2,6 +2,14 @@
 Change Log
 ==========
 
+Release 0.2.1
+-------------
+
+* Handle generic :class:`Exception` in addition to
+  :class:`~stompest.error.StompFrameError` when the Stomp listener
+  :meth:`~stompest.simple.Stomp.canRead` generates an error (supports
+  reconnect when attaching to a topic or a queue)
+
 Release 0.2
 -----------
 
