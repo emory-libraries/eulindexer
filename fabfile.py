@@ -24,6 +24,7 @@ that you are interested in.
 
 # default settings
 env.rev_tag = ''
+env.project = 'eulindexer'
 env.remote_path = '/home/httpd/sites/eulindexer'
 env.remote_acct = 'eulindexer'
 env.url_prefix = ''
@@ -34,8 +35,8 @@ def configure(path=None, user=None, url_prefix=None, remote_proxy=None):
     env.version = eulindexer.__version__
     config_from_git()
     # construct a unique build directory name based on software version and svn revision
-    env.build_dir = 'eulindexer-%(version)s%(rev_tag)s' % env
-    env.tarball = 'eulindexer-%(version)s%(rev_tag)s.tar.bz2' % env
+    env.build_dir = '%(project)s-%(version)s%(rev_tag)s' % env
+    env.tarball = '%(project)s-%(version)s%(rev_tag)s.tar.bz2' % env
 
     if path:
         env.remote_path = path.rstrip('/')
@@ -121,13 +122,13 @@ def configure_site():
     with cd(env.remote_path):
         if not files.exists('localsettings.py'):  
             abort('Configuration file is not in expected location: %(remote_path)s/localsettings.py' % env)
-        sudo('cp localsettings.py %(build_dir)s/eulindexer/localsettings.py' % env,
+        sudo('cp localsettings.py %(build_dir)s/%(project)s/localsettings.py' % env,
              user=env.remote_acct)
 
     # collect static files to be served out by apache
     with cd('%(remote_path)s/%(build_dir)s' % env):
         with prefix('source env/bin/activate'):
-            sudo('python eulindexer/manage.py collectstatic --noinput',
+            sudo('python %(project)s/manage.py collectstatic --noinput' % env,
                  user=env.remote_acct)
 
 def update_links():
@@ -146,7 +147,7 @@ def compare_localsettings(path=None, user=None):
         if files.exists('previous'):
             with settings(hide('warnings', 'running', 'stdout', 'stderr'),
                           warn_only=True):  # suppress output, don't abort on diff error exit code
-                output = sudo('diff current/eulindexer/localsettings.py previous/eulindexer/localsettings.py',
+                output = sudo('diff current/%(project)s/localsettings.py previous/%(project)s/localsettings.py' % env,
                               user=env.remote_acct)
                 if output:
                     puts(yellow('WARNING: found differences between current and previous localsettings.py'))
@@ -230,7 +231,7 @@ def rm_old_builds(path=None, user=None, noinput=False):
         dir_items = [n.strip() for n in dir_listing.split('\n')] 
         # regex based on how we generate the build directory:
         #   project name, numeric version, optional pre/dev suffix, optional revision #
-        build_dir_regex = r'^eulindexer-[0-9.]+(-[A-Za-z0-9_-]+)?(-r[0-9a-f]+)?$' % env
+        build_dir_regex = r'^%(project)s-[0-9.]+(-[A-Za-z0-9_-]+)?(-r[0-9a-f]+)?$' % env
         build_dirs = [item for item in dir_items if re.match(build_dir_regex, item)]
         # by default, preserve the 3 most recent build dirs from deletion
         rm_dirs = build_dirs[3:]
