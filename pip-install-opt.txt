@@ -1,0 +1,3 @@
+# optional modules
+MySQL-python 
+progressbar

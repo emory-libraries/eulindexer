@@ -638,6 +638,7 @@ class ReindexTest(TestCase):
             # set to a non-empty list so items will be indexed
             self.command.cmodels_graph.objects.return_value = ['foo']
         self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+        self.command.total_from_graph = Mock(return_value=3)
         # set test pids to be indexed
         testpids = ['pid:1', 'pid:2', 'pid:3']
         self.command.pids_from_graph = Mock(return_value=testpids)
@@ -672,6 +673,7 @@ class ReindexTest(TestCase):
             self.command.cmodels_graph.objects.return_value = ['foo']
         self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
         self.command.pids_from_graph = Mock(return_value=pids)
+        self.command.total_from_graph = Mock(return_value=1)
         indexconfig1 = Mock()
         indexconfig2 = Mock()
         indexes = {

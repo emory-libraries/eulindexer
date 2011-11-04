@@ -112,10 +112,17 @@ def setup_virtualenv():
              user=env.remote_acct)
         # activate the environment and install required packages
         with prefix('source env/bin/activate'):
+            # required packages
             pip_cmd = 'pip install -r pip-install-req.txt'
             if env.remote_proxy:
                 pip_cmd += ' --proxy=%(remote_proxy)s' % env
             sudo(pip_cmd, user=env.remote_acct)
+            # install optional modules (progressbar)
+            pip_cmd = 'pip install -r pip-install-opt.txt'
+            if env.remote_proxy:
+                pip_cmd += ' --proxy=%(remote_proxy)s' % env
+            sudo(pip_cmd, user=env.remote_acct)
+                        
 
 def configure_site():
     'Copy configuration files into the remote source tree.'

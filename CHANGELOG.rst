@@ -2,6 +2,16 @@
 Change Log
 ==========
 
+in development
+--------------
+
+* Minor updates to ``reindex`` script: optional support for progress
+  reporting with :mod:`progressbar`; report on the time reindexing
+  took.
+* New ``pip-install-opt.txt`` pip requirement file for modules that
+  are not strictly required, but probably useful for a standard
+  deploy; will be installed by a fab deploy.
+
 Release 0.2.1
 -------------
 
