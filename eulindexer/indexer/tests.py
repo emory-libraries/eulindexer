@@ -318,15 +318,23 @@ class SiteIndexTest(TestCase):
     mockurllib = Mock(urllib2)
     mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
 
+    settings_keys = ['DEV_ENV', 'FEDORA_USER', 'FEDORA_PASSWORD']
+    _settings = {}
+
     def setUp(self):
-        self._dev_env = getattr(settings, 'DEV_ENV', None)
+        for key in self.settings_keys:
+            self._settings[key] = getattr(settings, key, None),
+
         settings.DEV_ENV = False
+        settings.FEDORA_USER = None
+        settings.FEDORA_PASSWORD = None
 
     def tearDown(self):
-        if self._dev_env is None:
-            delattr(settings, 'DEV_ENV')
-        else:
-            setattr(settings, 'DEV_ENV', self._dev_env)
+        for key, val in self._settings.iteritems():
+            if val is None:
+                delattr(settings, key)
+            else:
+                setattr(settings, key, val)
 
     @patch('eulindexer.indexer.models.urllib2')
     @patch('eulindexer.indexer.models.sunburnt')
