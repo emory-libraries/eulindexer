@@ -318,6 +318,16 @@ class SiteIndexTest(TestCase):
     mockurllib = Mock(urllib2)
     mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
 
+    def setUp(self):
+        self._dev_env = getattr(settings, 'DEV_ENV', None)
+        settings.DEV_ENV = False
+
+    def tearDown(self):
+        if self._dev_env is None:
+            delattr(settings, 'DEV_ENV')
+        else:
+            setattr(settings, 'DEV_ENV', self._dev_env)
+
     @patch('eulindexer.indexer.models.urllib2')
     @patch('eulindexer.indexer.models.sunburnt')
     def test_init(self, mocksunburnt, mockurllib):
