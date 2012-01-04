@@ -2,8 +2,8 @@
 Change Log
 ==========
 
-in development
---------------
+Release 0.3.0
+-------------
 
 * Minor updates to ``reindex`` script: optional support for progress
   reporting with :mod:`progressbar`; report on the time reindexing
