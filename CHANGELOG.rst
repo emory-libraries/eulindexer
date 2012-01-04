@@ -2,6 +2,21 @@
 Change Log
 ==========
 
+Release 0.3.0
+-------------
+
+* Minor updates to ``reindex`` script: optional support for progress
+  reporting with :mod:`progressbar`; report on the time reindexing
+  took.
+* New ``pip-install-opt.txt`` pip requirement file for modules that
+  are not strictly required, but probably useful for a standard
+  deploy; will be installed by a fab deploy.
+* ``indexer`` and ``reindex`` will now pass any Fedora credentials
+  configured in ``localsettings.py`` to sites that are running under
+  SSL when making index data requests, in order to provide a method
+  for centralizing fedora indexing permissions.
+
+
 Release 0.2.1
 -------------
 

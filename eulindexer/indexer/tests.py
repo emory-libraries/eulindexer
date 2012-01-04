@@ -316,7 +316,25 @@ class SiteIndexTest(TestCase):
     
     # Mock urllib calls to return an empty JSON response
     mockurllib = Mock(urllib2)
-    mockurllib.urlopen.return_value.read.return_value = '{}'
+    mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
+
+    settings_keys = ['DEV_ENV', 'FEDORA_USER', 'FEDORA_PASSWORD']
+    _settings = {}
+
+    def setUp(self):
+        for key in self.settings_keys:
+            self._settings[key] = getattr(settings, key, None),
+
+        settings.DEV_ENV = False
+        settings.FEDORA_USER = None
+        settings.FEDORA_PASSWORD = None
+
+    def tearDown(self):
+        for key, val in self._settings.iteritems():
+            if val is None:
+                delattr(settings, key)
+            else:
+                setattr(settings, key, val)
 
     @patch('eulindexer.indexer.models.urllib2')
     @patch('eulindexer.indexer.models.sunburnt')
@@ -336,11 +354,12 @@ class SiteIndexTest(TestCase):
                 ['info:fedora/emory-control:EuterpeAudio-1.0']
             ]
         }
-        mockurllib.urlopen.return_value.read.return_value = simplejson.dumps(index_config)
+        mockopener = mockurllib.build_opener.return_value
+        mockopener.open.return_value.read.return_value = simplejson.dumps(index_config)
         index = SiteIndex(site_url)
         self.assertEqual(site_url, index.site_url)
         # now initialized with 
-        mockurllib.urlopen.assert_called_with(site_url)
+        mockopener.open.assert_called_with(site_url)
         self.assertEqual(index_config['SOLR_URL'], index.solr_url,
                          'SiteIndex solr url should be configured based on data returned from url call')
         for cmodel_group in index_config['CONTENT_MODELS']:
@@ -355,6 +374,37 @@ class SiteIndexTest(TestCase):
         self.assert_(isinstance(solr_kwargs['http_connection'], httplib2.Http))
         self.assertEqual('solr interface', index.solr_interface)
 
+
+    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.sunburnt')
+    @patch.object(settings, 'DEV_ENV', new=False)
+    def test_request_headers(self, mocksunburnt):
+        # non-ssl indexdata url
+        index = SiteIndex('http://site.url')
+        self.mockurllib.build_opener.assert_called()
+        headers =  dict(index.opener.addheaders)
+        self.assert_('User-Agent' in headers)
+        self.assert_(headers['User-Agent'].startswith('EULindexer/'))
+        # auth should not be set in non-ssl
+        self.assert_('AUTHORIZATION' not in headers)
+
+        # ssl with no credentials - no basic auth
+        with patch.object(settings, 'FEDORA_USER', new=None):
+            with patch.object(settings, 'FEDORA_PASSWORD', new=None):
+                
+                index = SiteIndex('https://site.url')
+                headers =  dict(index.opener.addheaders)
+                self.assert_('AUTHORIZATION' not in headers)
+
+        # ssl with credentials - basic auth should be set
+        with patch.object(settings, 'FEDORA_USER', new='user'):
+            with patch.object(settings, 'FEDORA_PASSWORD', new='pass'):
+                
+                index = SiteIndex('https://site.url')
+                headers =  dict(index.opener.addheaders)
+                self.assert_('AUTHORIZATION' in headers)
+                self.assert_(headers['AUTHORIZATION'].startswith('Basic '))
+                
 
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')
@@ -393,7 +443,8 @@ class SiteIndexTest(TestCase):
     @patch('eulindexer.indexer.models.sunburnt')
     def test_index_item(self, mocksunburnt, mockurllib):
         # return empty json data for index init/load config
-        mockurllib.urlopen.return_value.read.return_value = '{}'
+        mockopener = mockurllib.build_opener.return_value
+        mockopener.open.return_value.read.return_value = '{}'
         index = SiteIndex('test-site-url')
         testpid = 'test:abc1'
         # replace solr interface with a mock we can inspect
@@ -403,7 +454,8 @@ class SiteIndexTest(TestCase):
         mockresponse = Mock()
         mockresponse.read.return_value = simplejson.dumps(index_data)
         mockresponse.code = 2000
-        mockurllib.urlopen.return_value = mockresponse
+        mockopener.open.return_value = mockresponse
+
         indexed = index.index_item(testpid)
         # solr 'add' should be called with data returned via index data webservice
         index.solr_interface.add.assert_called_with(index_data)
@@ -414,10 +466,10 @@ class SiteIndexTest(TestCase):
         self.assertRaises(SolrError, index.index_item, testpid)
 
         # json parse error should also raise an exception
-        mockurllib.urlopen.return_value.read.return_value = 'bogus data that is non-json-parsable '
+        mockopener.open.return_value.read.return_value = 'bogus data that is non-json-parsable '
         self.assertRaises(Exception, index.index_item, testpid)
         
-        mockurllib.urlopen.side_effect = Exception
+        mockopener.open.side_effect = Exception
         # error on attempt to read index data should be raised as a recoverable error
         self.assertRaises(IndexDataReadError, index.index_item, testpid)
 
@@ -426,7 +478,8 @@ class SiteIndexTest(TestCase):
     @patch('eulindexer.indexer.models.sunburnt')
     def test_delete_item(self, mocksunburnt, mockurllib):
         # return empty json data for index init/load config
-        mockurllib.urlopen.return_value.read.return_value = '{}'
+        mockopener = mockurllib.build_opener.return_value
+        mockopener.open.return_value.read.return_value = '{}'
         index = SiteIndex('test-site-url')
         index.solr_interface = Mock()
         keyfield = 'Pid'
@@ -492,7 +545,7 @@ class TestInitConfiguredIndexes(TestCase):
 
     # Mock urllib calls to return an empty JSON response
     mockurllib = Mock(urllib2)
-    mockurllib.urlopen.return_value.read.return_value = '{}'
+    mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
 
     @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
     @patch('eulindexer.indexer.models.sunburnt')
@@ -638,6 +691,7 @@ class ReindexTest(TestCase):
             # set to a non-empty list so items will be indexed
             self.command.cmodels_graph.objects.return_value = ['foo']
         self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
+        self.command.total_from_graph = Mock(return_value=3)
         # set test pids to be indexed
         testpids = ['pid:1', 'pid:2', 'pid:3']
         self.command.pids_from_graph = Mock(return_value=testpids)
@@ -672,6 +726,7 @@ class ReindexTest(TestCase):
             self.command.cmodels_graph.objects.return_value = ['foo']
         self.command.load_pid_cmodels = Mock(side_effect=set_cmodel_graph)
         self.command.pids_from_graph = Mock(return_value=pids)
+        self.command.total_from_graph = Mock(return_value=1)
         indexconfig1 = Mock()
         indexconfig2 = Mock()
         indexes = {

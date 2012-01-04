@@ -14,6 +14,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import base64
 import httplib2
 import logging
 import socket
@@ -26,6 +27,9 @@ from django.utils import simplejson
 from httplib2 import iri2uri
 from sunburnt import sunburnt, SolrError
 import time
+from urlparse import urlparse
+
+import eulindexer
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +57,36 @@ class SolrUnavailable(SiteUnavailable):
 
 
 class SiteIndex(object):
+
     def __init__(self, site_url):
         self.site_url = site_url
         self.solr_url = ''
         self.solr_interface = None
         self.content_models = []
+
+        # custom request headers; include current version in user-agent
+        request_headers = [('User-Agent', 'EULindexer/%s' % eulindexer.__version__ )]
+        
+        # If indexdata site is SSL and Fedora credentials are configured,
+        # pass credentials to indexdata app via Basic Auth
+        # (always pass credentials when DEV_ENV is True for development purposes)
+        parsed_url = urlparse(self.site_url)
+        if (parsed_url.scheme == 'https' or getattr(settings, 'DEV_ENV', False)) and \
+               getattr(settings, 'FEDORA_USER', None) and getattr(settings, 'FEDORA_PASSWORD', None):
+
+            token = base64.b64encode('%s:%s' % (settings.FEDORA_USER, settings.FEDORA_PASSWORD))
+            self._auth_token = 'Basic %s' % token
+            request_headers.append(('AUTHORIZATION', self._auth_token))
+
+        self.opener = urllib2.build_opener()
+        self.opener.addheaders = request_headers
+        
         self.load_configuration()
 
     def load_configuration(self):
         # load the index configuration from the specified site url
         try:
-            response = urllib2.urlopen(self.site_url)
+            response = self.opener.open(self.site_url)
             index_config = simplejson.loads(response.read())
             logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
         except urllib2.URLError as err:
@@ -166,7 +189,7 @@ class SiteIndex(object):
 
         try:
             start = time.time()
-            response = urllib2.urlopen(indexdata_url)
+            response = self.opener.open(indexdata_url)
             json_value = response.read()
             logger.debug('%s %d : %f sec' % (indexdata_url,
                                             response.code,

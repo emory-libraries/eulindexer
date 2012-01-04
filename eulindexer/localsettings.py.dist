@@ -20,6 +20,7 @@ DATABASES = {
 
 DEBUG = False
 TEMPLATE_DEBUG = DEBUG
+DEV_ENV = False
 
 ADMINS = (
     # ('Your Name', 'your_email@domain.com'),
@@ -48,11 +49,15 @@ INDEXER_SITE_URLS = {
 #SOLR_CA_CERT_PATH = '/etc/ssl/certs/ca-certificates.crt'
 
 
-# Needed for some tests - should this be mocked out? 
-FEDORA_ROOT='http://localhost:8080/fedora/'
-FEDORA_TEST_ROOT='http://localhost:8080/fedora/'
-FEDORA_TEST_USER='fedoraAdmin'
-FEDORA_TEST_PASSWORD='fedoraAdmin'
+# Fedora configuration (used to querying for content models, etc)
+FEDORA_ROOT = 'http://localhost:8080/fedora/'
+# optional fedora credentials
+#FEDORA_USER = 'fedoraAdmin'
+#FEDORA_PASSWORD = 'fedoraAdmin'
+
+FEDORA_TEST_ROOT = 'http://localhost:8080/fedora/'
+FEDORA_TEST_USER = 'fedoraAdmin'
+FEDORA_TEST_PASSWORD = 'fedoraAdmin'
 FEDORA_PIDSPACE = 'changme'
 
 # Where do we listen for fedora STOMP update messages? See FEDORA-MQ.rst

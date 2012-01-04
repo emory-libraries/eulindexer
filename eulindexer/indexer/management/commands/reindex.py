@@ -51,6 +51,7 @@ Use ``python manage.py reindex -h`` for more details.
 '''
 
 
+import os, sys
 from datetime import datetime, timedelta
 from optparse import make_option
 from rdflib import URIRef
@@ -58,6 +59,14 @@ from urlparse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
+
+# progressbar for optional progress output
+try:
+    from progressbar import ProgressBar, Bar, Percentage, \
+         ETA, Counter
+except ImportError:
+    ProgressBar = None
+
 
 from eulfedora.rdfns import model as modelns
 from eulfedora.server import Repository
@@ -88,9 +97,10 @@ class Command(BaseCommand):
         else:
             verbosity = v_normal
 
-
         # initialize repository connection - used in either mode
         self.repo = Repository()
+        # get a timestamp in order to report how long indexing took
+        start_time = datetime.now()
 
         # check if site is set in options - indexing all objects for a single site
         if 'site' in options and options['site']:
@@ -111,8 +121,9 @@ class Command(BaseCommand):
             # requires a combination of content models, this may
             # return extra objects, but they will be ignored at index time.
             self.content_models = self.indexes[site].distinct_content_models()
-            self.stdout.write('Querying Fedora for objects with content models:\n %s\n' % \
-                              ', '.join(self.content_models))
+            if verbosity >= v_normal:
+                self.stdout.write('Querying Fedora for objects with content models:\n %s\n' % \
+                                  ', '.join(self.content_models))
             self.load_pid_cmodels(content_models=self.content_models)
             # set pids to be indexed based on the risearch query result
             self.pids = self.pids_from_graph()
@@ -138,6 +149,8 @@ class Command(BaseCommand):
             # load configured site indexes so we can figure out which pids to index where
             self.load_indexes()
             self.pids = pids
+            if verbosity >= v_normal:
+                self.stdout.write('Querying Fedora for object content models\n')
             self.load_pid_cmodels(pids=pids)
 
         # no site, no pids - nothing to index
@@ -148,11 +161,31 @@ class Command(BaseCommand):
         # loop through the objects and index them
         self.index_count = 0
         self.err_count = 0
+
+        pbar = None
+        # check if progressbar is available and output is not redirected
+        if ProgressBar and os.isatty(sys.stderr.fileno()):
+            try:
+                # get the length of pids is a list
+                total = len(self.pids)
+            except:
+                # otherwise, pids is a generator - get the total from rdf graph
+                total = self.total_from_graph()
+            # init progress bar if we're indexing enough items to warrant it
+            if total >= 5:
+                pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(), ')', Bar(),
+                                            ETA()], maxval=total).start()
+
+        i = 0
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
             content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(obj.uri),
                                                                     predicate=modelns.hasModel)]
+
+            i += 1
+            if pbar:
+                pbar.update(i)
             
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
@@ -185,10 +218,17 @@ class Command(BaseCommand):
                 self.stdout.write('Failed to index %s - none of the configured sites index this item\n'
                                   % obj.pid)
 
+        end_time = datetime.now()
+        if pbar:
+            pbar.finish()
+
         if verbosity >= v_normal:
             # report # of items indexed, even if it is zero
-            self.stdout.write('Indexed %d item%s\n' % (self.index_count,
-                                                       '' if self.index_count == 1 else 's'))
+            timediff = (end_time - start_time)
+
+            self.stdout.write('Indexed %d item%s in %s\n' % \
+                              (self.index_count, '' if self.index_count == 1 else 's',
+                               timediff))
             # if err count is not zero, report it also
             if self.err_count:
                 self.stdout.write('%d errors on attempts to index\n' % self.err_count)
@@ -249,6 +289,15 @@ class Command(BaseCommand):
         for subj in self.cmodels_graph.subjects(predicate=modelns.hasModel):
             # convert from URIRef to string 
             yield str(subj)
+
+
+    def total_from_graph(self):
+        '''Determine the total number of pids that will be indexed
+        when indexing based on a RIsearch query (i.e., indexing by
+        site or by content model).
+        '''
+        # FIXME: more efficient way to do this?
+        return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
 
 
 

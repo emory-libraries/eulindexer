@@ -1,6 +1,8 @@
 :mod:`eulindexer` Code Documentation for eulindexer
 ===================================================
 
+.. automodule:: eulindexer
+
 indexer
 -----------
 The main module for communication with Fedora and
