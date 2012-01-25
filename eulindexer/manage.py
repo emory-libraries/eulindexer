@@ -16,13 +16,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import os
-import logging.config
 from django.core.management import execute_manager
-
-LOGGING_CONF = 'logging.conf'
-if os.path.exists(LOGGING_CONF):
-    logging.config.fileConfig(LOGGING_CONF)
 
 try:
     import settings # Assumed to be in the same directory.
@@ -33,3 +27,5 @@ except ImportError:
 
 if __name__ == "__main__":
     execute_manager(settings)
+
+
