@@ -49,7 +49,6 @@ class IndexerTest(TestCase):
                        'INDEXER_STOMP_CHANNEL']
 
     def setUp(self):
-        self.command = indexer.Command()
         # store configurations tests may modify or add
         for cfg in self.config_settings:
             setattr(self, '_%s' % cfg, getattr(settings, cfg, None))
@@ -58,6 +57,8 @@ class IndexerTest(TestCase):
         settings.INDEXER_STOMP_SERVER = 'localhost'
         settings.INDEXER_STOMP_PORT = '61613'
         settings.INDEXER_STOMP_CHANNEL = '/topic/foo'
+        
+        self.command = indexer.Command()
 
     def tearDown(self):
         # restore settings
@@ -309,6 +310,34 @@ class IndexerTest(TestCase):
         self.assertEqual(site, indexerr.site)
         self.assert_('Failed to index' in indexerr.detail)
         self.assert_('2 attempts'  in indexerr.detail)
+
+
+    def test_idle_reconnect(self):
+        mocklistener = Mock(Stomp)
+        # simulate what happens when fedora becomes unavailable
+        mocklistener.canRead.return_value = True
+        mocklistener.receiveFrame.side_effect = StompFrameError
+
+        with patch.object(self.command, 'reconnect_listener') as mockreconnect:
+            with patch.object(self.command, 'init_listener') as mockinit:
+                # mock init and set listener, last activity
+                self.command.listener = Mock()
+                self.command.last_activity = datetime.now() - timedelta(minutes=3)
+                self.command.interrupted = True   # stop after one loop
+
+                self.command.handle()
+                self.assertEqual(0, mockreconnect.call_count,
+                     'reconnect should not be called if idle-reconnect is not set')
+                self.assertEqual(0, self.command.listener.disconnect.call_count,
+                     'listener.disconnect should not be called if idle-reconnect is not set')
+
+                # with reconnect param
+                self.command.handle(idle_reconnect=1)
+                self.assertEqual(1, mockreconnect.call_count,
+                     'reconnect should be called based on idle-reconnect & last activity')
+                self.assertEqual(1, self.command.listener.disconnect.call_count,
+                     'listener.disconnect should be called based on idle-reconnect & last activity')
+        
 
 class SiteIndexTest(TestCase):
     '''Tests for the SiteIndex object, which wraps the index
