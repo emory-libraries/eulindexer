@@ -448,12 +448,17 @@ class Command(BaseCommand):
             self.interrupted = True
 
             if self.verbosity >= self.v_normal:
-                self.stdout.write('SIGINT received\n')
+                # log as well as printing to stdout (for manual run & init.d-type service run)
+                msg = 'SIGINT received; stopping'
+                self.stdout.write('%s\n' % msg)
+                logger.info(msg)
 
             # report if indexer currently has items queued for indexing
             if self.to_index:
                 msg = '\n%d item(s) currently queued for indexing.\n' % len(self.to_index.keys())
                 msg += 'Indexer will stop listening for updates and exit after currently queued items have been indexed.\n'
+                # log summary information
+                logger.info(msg)
                 msg += '(Ctrl-C / Interrupt again to quit immediately)\n'
                 self.stdout.write(msg)
                 
@@ -468,7 +473,10 @@ class Command(BaseCommand):
             # but I can't figure out a way to do that...
             
             if self.verbosity >= self.v_normal:
-                self.stdout.write('SIGHUP received; reloading site index configurations.')
+                # log as well as printing to stdout
+                msg = 'SIGHUP received; reloading site index configurations.'
+                self.stdout.write(msg)
+                logger.info(msg)
             # reload site indexes
             self.init_indexes()
 
