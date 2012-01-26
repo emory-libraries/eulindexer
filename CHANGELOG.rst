@@ -2,6 +2,16 @@
 Change Log
 ==========
 
+
+Release # TBD
+-------------
+
+* Added ``idle-reconnect` option to ``indexer`` script to optionally
+  renew stomp listen connection after a specified time of no activity.
+* Sample init.d script in ``scripts/eulindexer`` for use starting,
+  stopping, reloading, and otherwise managing the ``indexer`` script
+  like a system service.  
+
 Release 0.3.0
 -------------
 
