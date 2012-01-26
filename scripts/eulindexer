@@ -108,8 +108,10 @@ case "$ACTION" in
         is_running
         if [ $? -eq 1 ]; then
             echo "$DESC is running ($(cat $PIDFILE))"
+            exit 0
         else
             echo "$DESC is not running"
+            exit 2
         fi
         ;;
 
