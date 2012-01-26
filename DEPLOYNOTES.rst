@@ -3,11 +3,8 @@ Deploy Notes
 
 Instructions for installation & upgrade notes.
 
-Installation
-------------
-
 Software Dependencies
-~~~~~~~~~~~~~~~~~~~~~
+---------------------
 
 We recommend the use of `pip <http://pip.openplans.org/>`_ and `virtualenv
 <http://virtualenv.openplans.org/>`_ for environment and dependency
@@ -63,10 +60,10 @@ dependencies for EULIndexer.
 
 
 Install/Configure System Dependencies
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-------------------------------------
 
 Configuring Fedora for indexing
-"""""""""""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Currently, EULIndexer only supports Fedora "out of the box". Fedora is configured 
 by default to send all data ingests, modifications, and deletions to a message 
@@ -75,7 +72,7 @@ updates and respond to them in custom-defined ways. This section describes the
 Fedora configuration necessary for this indexer project to communicate with it.
 
 Install Spring
---------------
+""""""""""""""
 
 For our Production installation, we have installed Spring as part of
 enabling this service. We are using Spring Framework 3.1.0.M1 which
@@ -86,13 +83,14 @@ Once downloaded and extracted, run the following copy command: ::
   cp <extracted_directory>/spring-framework-3.1.0.M1/dist/org.springframework* <fedora_home>/tomcat/webapps/fedora/WEB-INF/lib/
 
 Configure STOMP
----------------
+"""""""""""""""
 
 By default, Fedora is configured to notify applications about data ingests,
-modifications, and deletions via the `JMS
-<http://en.wikipedia.org/wiki/Java_Message_Service>`_ protocol. It's also
-easy to configure it to use the `STOMP <http://stomp.codehaus.org/>`
-protocol.
+modifications, and deletions via the `JMS`_ protocol. It's also
+easy to configure it to use the `STOMP`_ protocol.
+
+.. _JMS: http://en.wikipedia.org/wiki/Java_Message_Service
+.. _STOMP: http://stomp.codehaus.org/
 
 In the ``fedora.fcfg`` file, find the section that begins with the following
 tag::
@@ -113,7 +111,7 @@ JMS. You can use another port besides 61613 if you prefer. Restart Fedora
 when you're ready for this change to take effect.
 
 Add a message queue
--------------------
+"""""""""""""""""""
 
 JMS and STOMP have two ways of distributing messages: `topics` and `queues`.
 By default, Fedora is configured to use a topic named ``fedora.apim.update``
@@ -171,20 +169,22 @@ Restart Fedora when you're ready for this change to take effect.
 
 
 SOLR
-----
+^^^^
 
-EULIndexer also only supports SOLR for an index "out of the box" at this time. 
-To learn more about SOLR, please visit: http://lucene.apache.org/solr/ . Sample
-documentation of our infrastructure install with Fedora can be found at:
-`Emory Libraries TechKnowHow <https://techknowhow.library.emory.edu/fedora-commons/fedora-install-notes>`_
+:mod:`eulindexer` currently only supports `Solr`_ indexing.  To learn
+more about SOLR, please visit:  . Sample
+documentation of our infrastructure install with Fedora can be found
+at: `Emory Libraries TechKnowHow
+<https://techknowhow.library.emory.edu/fedora-commons/fedora-install-notes>`_
 
-Please note that a SOLR schema is required for data to be processed and EULIndexer 
-assumes that schema is named "schema.xml" within the SOLR instance. A sample simple
-SOLR Schema is located in the indexdata directory of `EULfedora <https://github.com/emory-libraries/eulfedora>`_
-as the name "sample-solr-schema.xml" (which would naturally need to be renamed "schema.xml" to be used).
+.. _Solr: http://lucene.apache.org/solr/
+
+:mod:`eulindexer` uses :mod:`sunburnt` to access Solr, and will
+autoload Solr schemas from the Solr instances referenced by the
+configured sites.
 
 Install the Application
-~~~~~~~~~~~~~~~~~~~~~~~
+-----------------------
 
 Apache
 ^^^^^^
@@ -216,7 +216,34 @@ a different message target name above, replace the name in
 If any changes to settings are made to a running indexer, then the indexer
 must be restarted for those changes to take effect.
 
-Running The Indexer
+Running the indexer
 ^^^^^^^^^^^^^^^^^^^
 
-Please see this section under `Readme <readme.html>`_.
+For command line options and features, see the documentation on the
+:mod:`~eulindexer.indexer.management.commands.indexer` script.
+
+To manage the ``indexer`` script as a system service, you can use the
+shell script included with the source code (``scripts/eulindexer``) as
+an init.d script.  To do that, simply copy the script to the
+appropiate location, e.g.::
+
+  $ cp scripts/eulindexer /etc/init.d/
+
+And edit all the configuration variables and paths at the top of the
+script to match your environment.  This init script supports running
+:mod:`eulindexer` in a Python virtualenv.  Logging for the indexer is
+expected to be configured in the :mod:`eulindexer` application and is
+not handled directly by the init script.
+
+.. Warning::
+
+  Because this init script uses ``start-stop-daemon`` to start
+  ``indexer`` in background mode, if there are any errors running the
+  script, it will fail silently.  It is recommended to check that
+  everything is configured properly in your site and that all
+  permissions are correct (including permission to write to the
+  configured logfiles, etc) by starting the indexer script manually
+  before attempting to start it via the init script.
+
+
+
