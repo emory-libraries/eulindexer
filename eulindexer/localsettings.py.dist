@@ -94,7 +94,7 @@ LOGGING = {
         'mail_admins': {
             'level': 'ERROR',
             'class': 'django.utils.log.AdminEmailHandler',
-        }
+        },
         'logfile':{
             'level': 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
