@@ -320,23 +320,24 @@ class IndexerTest(TestCase):
 
         with patch.object(self.command, 'reconnect_listener') as mockreconnect:
             with patch.object(self.command, 'init_listener') as mockinit:
-                # mock init and set listener, last activity
-                self.command.listener = Mock()
-                self.command.last_activity = datetime.now() - timedelta(minutes=3)
-                self.command.interrupted = True   # stop after one loop
+                with patch.object(self.command, 'init_indexes'):
+                    # mock init and set listener, last activity
+                    self.command.listener = Mock()
+                    self.command.last_activity = datetime.now() - timedelta(minutes=3)
+                    self.command.interrupted = True   # stop after one loop
 
-                self.command.handle()
-                self.assertEqual(0, mockreconnect.call_count,
-                     'reconnect should not be called if idle-reconnect is not set')
-                self.assertEqual(0, self.command.listener.disconnect.call_count,
-                     'listener.disconnect should not be called if idle-reconnect is not set')
+                    self.command.handle()
+                    self.assertEqual(0, mockreconnect.call_count,
+                         'reconnect should not be called if idle-reconnect is not set')
+                    self.assertEqual(0, self.command.listener.disconnect.call_count,
+                         'listener.disconnect should not be called if idle-reconnect is not set')
 
-                # with reconnect param
-                self.command.handle(idle_reconnect=1)
-                self.assertEqual(1, mockreconnect.call_count,
-                     'reconnect should be called based on idle-reconnect & last activity')
-                self.assertEqual(1, self.command.listener.disconnect.call_count,
-                     'listener.disconnect should be called based on idle-reconnect & last activity')
+                    # with reconnect param
+                    self.command.handle(idle_reconnect=1)
+                    self.assertEqual(1, mockreconnect.call_count,
+                         'reconnect should be called based on idle-reconnect & last activity')
+                    self.assertEqual(1, self.command.listener.disconnect.call_count,
+                         'listener.disconnect should be called based on idle-reconnect & last activity')
         
 
 class SiteIndexTest(TestCase):
