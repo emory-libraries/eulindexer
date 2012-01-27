@@ -62,7 +62,8 @@ d_start() {
             --background \
             --exec /usr/bin/env -- HTTP_PROXY=$HTTP_PROXY $PYTHON \
                 manage.py indexer $INDEXER_OPTS
-        chmod 400 $PIDFILE
+	# make the pidfile read-only, but world readable so anyone can check status
+        chmod 444 $PIDFILE   
     fi
 }
 
