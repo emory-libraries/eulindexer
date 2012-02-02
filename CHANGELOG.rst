@@ -3,7 +3,7 @@ Change Log
 ==========
 
 
-Release # TBD
+Release 0.4.0
 -------------
 
 * Added ``idle-reconnect` option to ``indexer`` script to optionally
