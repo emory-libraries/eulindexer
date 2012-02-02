@@ -36,9 +36,11 @@ details)::
      reconnect to Fedora if the connection is lost.
 
   --index-max-tries
-  
      The number of times the indexer will attempt to index an item
      when a potentially recoverable error is encountered.
+
+  --idle-reconnect
+     
 
 ----
 '''
@@ -81,30 +83,35 @@ class Command(BaseCommand):
     index_delta = timedelta(seconds=index_delay)
     index_max_tries = 3  # number of times to try indexing an item, if a recoverable error happens
 
-    fedora_server = None
+    stomp_server = None
     stomp_port = None
     listener = None
 
     # connection error handling/retry settings (TODO: these should probably be configurable)
     # FIXME: django settings and/or command options?
     retry_reconnect_wait = 5
-    # if we lose the connection to fedora, how long do we wait between attemps to reconnect?
+    # if we lose the connection to fedora, how long do we wait between attempts to reconnect?
     max_reconnect_retries = 5
     # how many times do we try to reconnect to fedora before we give up?
+
+    idle_reconnect = None
     
     option_list = BaseCommand.option_list + (
         make_option('--max-reconnect-retries', type='int', dest='max_reconnect_retries',
                     default=max_reconnect_retries,
-                    help='How many times to try reconnecting to Fedora if the connection ' +
+                    help='How many times to try reconnecting if the connection ' +
                     	 'is lost (default: %default; -1 for no maximum)'),
         make_option('--retry-reconnect-wait', type='int', dest='retry_reconnect_wait',
                     default=retry_reconnect_wait,
                     help='How many seconds to wait between reconnect attempts if the ' +
-                    	 'connection to Fedora is lost (default: %default)'),
+                    	 'connection is lost (default: %default)'),
         make_option('--index-max-tries', type='int', dest='index_max_tries',
                     default=index_max_tries,
                     help='Number of times to attempt indexing an item when a potentially ' +
                     	 'recoverable error is encountered'),
+        make_option('--idle-reconnect', type='int', dest='idle_reconnect',
+                    help='Reconnect when there has been no activity for the specified ' +
+                         'number of minutes')
 
     )
 
@@ -112,16 +119,17 @@ class Command(BaseCommand):
     interrupted = False
     
     def init_listener(self):
-        if self.fedora_server is None or self.stomp_port is None:
-            fedora_info = urlparse(settings.FEDORA_ROOT)
-            self.fedora_server, set, fedora_port = fedora_info.netloc.partition(':')
-            self.stomp_port = 61613    # TODO: make configurable?
+        if self.stomp_server is None or self.stomp_port is None:
+            self.stomp_server = settings.INDEXER_STOMP_SERVER
+            self.stomp_port = int(settings.INDEXER_STOMP_PORT)
 
-        self.listener = Stomp(settings.INDEXER_STOMP_SERVER, settings.INDEXER_STOMP_PORT)
+        self.listener = Stomp(self.stomp_server, self.stomp_port)
         self.listener.connect()
-        logger.info('Connected to Fedora message queue on %s:%i' % \
-                    (self.fedora_server, self.stomp_port))
-        self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL, {'ack': 'client'})  #  can we use auto-ack ?
+        logger.info('Connected to message queue on %s:%i' % \
+                    (self.stomp_server, self.stomp_port))
+        self.listener.subscribe(settings.INDEXER_STOMP_CHANNEL,
+                                {'ack': 'client'})  #  can we use auto-ack ?
+        self.last_activity = datetime.now()
 
     def init_indexes(self):
         # initialize all indexes configured in django settings
@@ -137,26 +145,29 @@ class Command(BaseCommand):
             for site, index in self.indexes.iteritems():
                 self.stdout.write('\t%s\n%s\n' % (site, index.config_summary()))
 
+    # verbosity option set by django BaseCommand 
+    v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
 
-    def handle(self, *args, **options):
+    def handle(self, verbosity=v_normal, retry_reconnect_wait=None,
+               max_reconnect_retries=None,  index_max_tries=None,
+               idle_reconnect=None, *args, **options):
         # bind a handler for interrupt signal
         signal.signal(signal.SIGINT, self.interrupt_handler)
         signal.signal(signal.SIGHUP, self.hangup_handler)
         
         # verbosity should be set by django BaseCommand standard options
-        self.v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
-        if 'verbosity' in options:
-            self.verbosity = int(options['verbosity'])
-        else:
-            self.verbosity = self.v_normal
+        self.verbosity = int(verbosity)
 
         # override retry/wait default settings if specified
-        if 'retry_reconnect_wait' in options:
-            self.retry_reconnect_wait = options['retry_reconnect_wait']
-        if 'max_reconnect_retries' in options:
-            self.max_reconnect_retries = options['max_reconnect_retries']
-        if 'index-max-tries' in options:
-            self.index_max_tries = options['index-max-tries']
+        if retry_reconnect_wait:
+            self.retry_reconnect_wait = retry_reconnect_wait
+        if max_reconnect_retries:
+            self.max_reconnect_retries = max_reconnect_retries
+        if index_max_tries:
+            self.index_max_tries = index_max_tries
+
+        if idle_reconnect is not None:
+            self.idle_reconnect = timedelta(minutes=idle_reconnect)
 
         # check for required settings
 
@@ -166,7 +177,7 @@ class Command(BaseCommand):
         except socketerror:
             # if we can't connect on start-up, bail out
             # FIXME: is this appropriate behavior? or should we wait and try to connect?
-            raise CommandError('Error connecting to %s:%s ' % (self.fedora_server, self.stomp_port) +
+            raise CommandError('Error connecting to %s:%s ' % (self.stomp_server, self.stomp_port) +
                                '- check that Fedora is running and that messaging is enabled ' +
                                'and  configured correctly')
 
@@ -174,6 +185,17 @@ class Command(BaseCommand):
         self.init_indexes()
 
         while (True):
+
+            # check time since last activity if idle reconnect is configured
+            if self.idle_reconnect and \
+                   datetime.now() - self.last_activity >= self.idle_reconnect:
+                logger.info('Time since last activity has exceeded idle reconnect time [%s]' \
+                      % (self.idle_reconnect,))
+                # disconnect and reconnect the stomp listener
+                self.listener.disconnect()
+                self.reconnect_listener()
+                
+            
             # if we've received an interrupt, don't check for new messages
             if self.interrupted:
                 # if we're interrupted but still have items queued for update,
@@ -205,6 +227,7 @@ class Command(BaseCommand):
                     # if there is a new message, process it
                     if data_available:
                         frame = self.listener.receiveFrame()
+                        self.last_activity = datetime.now()
                         # TODO: use message body instead of headers?
                         # (includes datastream id for modify datastream API calls)
                         pid = frame['headers']['pid']
@@ -253,7 +276,7 @@ class Command(BaseCommand):
                 self.listener = None
                 self.init_listener()
                 # if listener init succeeded, return for normal processing
-                logger.error('Reconnect attempt %d succeeded' % retry_count)
+                logger.info('Reconnect attempt %d succeeded' % retry_count)
                 return
     
             # if fedora is still not available, attempting to
@@ -268,7 +291,7 @@ class Command(BaseCommand):
         
         # if we reached the max retry without connecting, bail out
         # TODO: better error reporting - should this send an admin email?
-        raise CommandError('Failed to reconnect to Fedora after %d retries' % \
+        raise CommandError('Failed to reconnect to message queue after %d retries' % \
                            (retry_count - 1))
     
 
@@ -329,7 +352,7 @@ class Command(BaseCommand):
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, attempt to index
                 if datetime.now() - self.to_index[pid].time >= self.index_delta:
-                    logger.debug('Triggering index for %s' % pid)
+                    logger.info('Indexing %s' % pid)
 
                     # a single object could be indexed by multiple sites; index all of them
                     for site in self.to_index[pid].sites_to_index:
@@ -425,12 +448,17 @@ class Command(BaseCommand):
             self.interrupted = True
 
             if self.verbosity >= self.v_normal:
-                self.stdout.write('SIGINT received\n')
+                # log as well as printing to stdout (for manual run & init.d-type service run)
+                msg = 'SIGINT received; stopping'
+                self.stdout.write('%s\n' % msg)
+                logger.info(msg)
 
             # report if indexer currently has items queued for indexing
             if self.to_index:
                 msg = '\n%d item(s) currently queued for indexing.\n' % len(self.to_index.keys())
                 msg += 'Indexer will stop listening for updates and exit after currently queued items have been indexed.\n'
+                # log summary information
+                logger.info(msg)
                 msg += '(Ctrl-C / Interrupt again to quit immediately)\n'
                 self.stdout.write(msg)
                 
@@ -445,7 +473,10 @@ class Command(BaseCommand):
             # but I can't figure out a way to do that...
             
             if self.verbosity >= self.v_normal:
-                self.stdout.write('SIGHUP received; reloading site index configurations.')
+                # log as well as printing to stdout
+                msg = 'SIGHUP received; reloading site index configurations.'
+                self.stdout.write(msg)
+                logger.info(msg)
             # reload site indexes
             self.init_indexes()
 

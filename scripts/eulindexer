@@ -1,0 +1,142 @@
+#!/bin/sh
+
+# file scripts/eulindexer
+# 
+#   Copyright 2012 Emory University Libraries
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+
+# Shell script for use as init.d script
+# Starts, stops, and reloads eulindexer
+
+
+DESC="EULindexer"
+NAME=$0
+
+# configure with path to the virtualenv
+# (see http://pypi.python.org/pypi/virtualenv for more information)
+ENVIRONMENT_PATH=/home/httpd/eulindexer/env
+
+PIDFILE=/var/run/eulindexer.pid
+
+# path to eulindexer project installation (i.e., where manage.py is located)
+SITE_PATH=/home/httpd/eulindexer/eulindexer
+RUN_AS='eulindexer'
+HTTP_PROXY='http://localhost:3128/'
+
+# indexer script options
+INDEXER_OPTS='-v2 --retry-reconnect-wait=30 --max-reconnect-retries=-1 --idle-reconnect=15'
+
+
+# function to start the indexer service
+d_start() {
+    # find python binary to use - use virtulaenv python if available
+    if [ -f $ENVIRONMENT_PATH/bin/python ]; then
+        PYTHON=$ENVIRONMENT_PATH/bin/python
+    else
+        PYTHON=`which python`
+    fi
+
+    is_running
+    if [ $? -eq 1 ]; then
+        echo "$DESC is already running ($(cat $PIDFILE))"
+    else
+        # start indexer in the background; use start-stop-daemon
+        # to create the pidfile and put in the background;
+        # chdir to $SITE_PATH to simplify python path issues
+        start-stop-daemon --start --quiet \
+            --pidfile $PIDFILE --make-pidfile \
+            --chuid $RUN_AS \
+            --chdir $SITE_PATH \
+            --background \
+            --exec /usr/bin/env -- HTTP_PROXY=$HTTP_PROXY $PYTHON \
+                manage.py indexer $INDEXER_OPTS
+	# make the pidfile read-only, but world readable so anyone can check status
+        chmod 444 $PIDFILE   
+    fi
+}
+
+
+# function to stop the indexer service
+d_stop() {
+    # Kill running eulindexer process;
+    # Use SIGINT by default for graceful stop, but retry if needed
+    start-stop-daemon --stop --signal INT --retry 1/INT/3/INT/5/INT/10/KILL \
+        --quiet --pidfile $PIDFILE || echo "$DESC is not running"
+    
+    # check that indexer is no longer running; 
+    # remove pidfile when it was successfully stopped
+    is_running
+    if [ $? -eq 0 ]; then
+        rm -f $PIDFILE
+    fi
+}
+
+# function to check if the indexer process is running
+# returns 1 for running, 0 for not running
+is_running() {
+    if [ -f $PIDFILE ] && [ "$(ps -p $(cat $PIDFILE) --no-headers)" ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+ACTION="$1"
+case "$ACTION" in
+    start)
+        echo "Starting $DESC"
+        d_start
+        ;;
+
+    stop)
+        echo "Stopping $DESC"
+        d_stop
+        ;;
+
+    status)
+        is_running
+        if [ $? -eq 1 ]; then
+            echo "$DESC is running ($(cat $PIDFILE))"
+            exit 0
+        else
+            echo "$DESC is not running"
+            exit 2
+        fi
+        ;;
+
+    reload)
+        is_running
+        if [ $? -eq 1 ]; then
+            echo "Reloading $DESC ($(cat $PIDFILE))"
+            kill -HUP "$(cat $PIDFILE)"
+        else
+            echo "$DESC is not running"
+        fi
+        ;;
+
+    restart)
+        echo "Restarting $DESC"
+        d_stop
+        sleep 2
+        d_start
+        ;;
+
+    *)
+        echo "Usage: $NAME {start|stop|restart|reload|status}" >&2
+        exit 3
+        ;;
+esac
+
+exit 0

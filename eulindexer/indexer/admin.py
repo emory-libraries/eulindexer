@@ -36,8 +36,7 @@ class IndexErrorAdmin(admin.ModelAdmin):
     list_filter = ('site',)
     # only allow the the note/details field to be modified via admin site
     readonly_fields = ('object_id', 'site')
-
-    # TODO: details field should probably have a textarea widget
+    search_fields = ('object_id', 'site', 'detail')
 
     # disallow adding index errors via admin site
     def has_add_permission(self, request):
