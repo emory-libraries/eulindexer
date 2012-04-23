@@ -58,9 +58,9 @@ class SolrUnavailable(SiteUnavailable):
 
 class SiteIndex(object):
 
-    def __init__(self, site_url):
+    def __init__(self, site_url, solr_url=None):
         self.site_url = site_url
-        self.solr_url = ''
+        self.solr_url = solr_url or ''
         self.solr_interface = None
         self.content_models = []
 
@@ -81,9 +81,13 @@ class SiteIndex(object):
         self.opener = urllib2.build_opener()
         self.opener.addheaders = request_headers
         
-        self.load_configuration()
+        self.load_configuration(solr_url)
 
-    def load_configuration(self):
+    def load_configuration(self, solr_url=None):
+        '''Load index configuration for the configured site. If `solr_url`
+        is specified, use this URL for solr instead of the one provided by
+        the site.'''
+
         # load the index configuration from the specified site url
         try:
             response = self.opener.open(self.site_url)
@@ -92,8 +96,10 @@ class SiteIndex(object):
         except urllib2.URLError as err:
             raise SiteUnavailable(err)
         
-        if 'SOLR_URL' in index_config:
+        if not solr_url and 'SOLR_URL' in index_config:
             solr_url = index_config['SOLR_URL']
+
+        if solr_url:
             # work around weirdness in sunburnt or httplib (not sure which).
             # sunburnt (as of 0.5) utf8 encodes index data, but if you pass
             # it a unicode url then it passes that unicode straight through

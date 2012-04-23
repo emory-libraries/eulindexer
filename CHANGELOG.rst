@@ -2,6 +2,10 @@
 Change Log
 ==========
 
+Release 0.5.0
+-------------
+* Add ``-i index_url`` option to ``reindex`` to allow indexing site data in
+  an alternate index.
 
 Release 0.4.0
 -------------

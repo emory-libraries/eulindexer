@@ -38,6 +38,8 @@ The objects to be reindexed can be specified in one of the following ways:
   finding objects with any of the content models that site indexes)
   will be indexed, in that site only.
 
+* A single configured site, but 
+
 * A single fedora content model::
 
   $ python manage.py reindex  -c/--content-model info:fedora/cmodel:My-Object
@@ -85,6 +87,8 @@ class Command(BaseCommand):
                     choices=settings.INDEXER_SITE_URLS.keys(),
                     help='Index all objects that belong to a configured site [choices: ' +
                          ','.join(settings.INDEXER_SITE_URLS.keys()) + ']'),
+        make_option('-i', '--index-url',
+                    help='Override the site default solr index URL. Requires -s.'),
         make_option('-c', '--content-model', dest='cmodel',
                     help='Index all objects with the specified content model'),
     )
@@ -97,6 +101,9 @@ class Command(BaseCommand):
         else:
             verbosity = v_normal
 
+        if options.get('index_url', None) and not options.get('site', None):
+            raise CommandError('--index_url requires --site')
+
         # initialize repository connection - used in either mode
         self.repo = Repository()
         # get a timestamp in order to report how long indexing took
@@ -105,12 +112,18 @@ class Command(BaseCommand):
         # check if site is set in options - indexing all objects for a single site
         if 'site' in options and options['site']:
             site = options['site']
+
+            index_url = None
+            if 'index_url' in options:
+                index_url = options['index_url']
+
             # only load the configuration for the one site we are interested in
             if verbosity > v_normal:
                 self.stdout.write('Loading index configuration for %s' % site)
             try:
                 self.indexes = {
-                    site: SiteIndex(settings.INDEXER_SITE_URLS[site])
+                    site: SiteIndex(settings.INDEXER_SITE_URLS[site],
+                                    solr_url=index_url)
                 }
             except SiteUnavailable as err:
                 raise CommandError("Site '%s' is not available - %s" %
