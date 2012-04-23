@@ -38,7 +38,12 @@ The objects to be reindexed can be specified in one of the following ways:
   finding objects with any of the content models that site indexes)
   will be indexed, in that site only.
 
-* A single configured site, but 
+* A single configured site, but at an alternate index URL:
+
+  $ python manage.py reindex -s sitename -i index_url
+
+  All objects from the configured site will be indexed, with index data
+  going into the specified index URL instead of the site-specified index.
 
 * A single fedora content model::
 
