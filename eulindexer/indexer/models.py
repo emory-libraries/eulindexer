@@ -59,6 +59,18 @@ class SolrUnavailable(SiteUnavailable):
 class SiteIndex(object):
 
     def __init__(self, site_url, solr_url=None):
+        '''An object representing a single configured site that we're
+        indexing.
+
+        :param site_url: the url of the site index configuration. must
+               return a json object describing content models to index and
+               an index url where index data for this site's objects will be
+               sent.
+        :param solr_url: optional override. If set, this site will use the
+               specified URL for the index instead of getting that URL from
+               the site configuration. The rest of the site configuration
+               will be interpreted as usual.
+        '''
         self.site_url = site_url
         self.solr_url = solr_url or ''
         self.solr_interface = None
