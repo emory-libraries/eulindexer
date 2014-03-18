@@ -1,5 +1,5 @@
 # file eulindexer/indexer/management/commands/reindex.py
-# 
+#
 #   Copyright 2010,2011 Emory University Libraries
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 To index or reindex a specific set of objects, use the **reindex**
 command::
 
-  $ python manage.py reindex  
+  $ python manage.py reindex
 
 The objects to be reindexed can be specified in one of the following ways:
 
@@ -84,7 +84,7 @@ from eulindexer.indexer.models import init_configured_indexes, \
 class Command(BaseCommand):
     """Index Fedora objects, specified by pid, against the configured site indexes."""
     help = __doc__
-    
+
     args = '<pid pid ...>'
 
     option_list = BaseCommand.option_list + (
@@ -96,6 +96,8 @@ class Command(BaseCommand):
                     help='Override the site default solr index URL. Requires -s.'),
         make_option('-c', '--content-model', dest='cmodel',
                     help='Index all objects with the specified content model'),
+        make_option('-m', '--modified-since', dest='since',
+                    help='Index all objects modified since the specified date in YYYY-MM-DD format'),
     )
 
     def handle(self, *pids, **options):
@@ -108,6 +110,14 @@ class Command(BaseCommand):
 
         if options.get('index_url', None) and not options.get('site', None):
             raise CommandError('--index_url requires --site')
+
+        modified_since = None
+        if options.get('since', None):
+            try:
+                modified_since = datetime.strptime(options.get('since'), '%Y-%m-%d')
+            except:
+                raise CommandError('--modified-since %s could not be interpreted as YYYY-MM-DD date' \
+                                   % options.get('since'))
 
         # initialize repository connection - used in either mode
         self.repo = Repository()
@@ -133,7 +143,7 @@ class Command(BaseCommand):
             except SiteUnavailable as err:
                 raise CommandError("Site '%s' is not available - %s" %
                                    (site, err))
-            
+
             # Query fedora risearch for all objects with any of the
             # content models this site cares about.  If a site
             # requires a combination of content models, this may
@@ -151,7 +161,7 @@ class Command(BaseCommand):
             if verbosity > v_normal:
                 self.stdout.write("Indexing objects with content model '%s'\n" % \
                                   cmodel_pid)
-            # get the content model object from fedora in order to 
+            # get the content model object from fedora in order to
             # support both uri and pid notation
             cmodel = self.repo.get_object(cmodel_pid)
             # load pids for the specified cmodel
@@ -159,10 +169,38 @@ class Command(BaseCommand):
             # set pids to be indexed based on the risearch query result
             self.pids = self.pids_from_graph()
 
-            # load configured site indexes 
+            # load configured site indexes
             self.load_indexes()
 
-        # a list of pids to index, from an unknown site 
+        # find and reindex pids modified since a specified date
+        elif modified_since:
+
+            # sparql query to find objects by modification date
+            # - includes query for content models so cmodels_graph can
+            # be populated at the same time
+            find_modified = '''SELECT ?pid ?hasmodel ?cmodel
+            WHERE {
+               ?pid <fedora-model:hasModel> <info:fedora/fedora-system:FedoraObject-3.0> .
+               ?pid <fedora-model:hasModel> ?cmodel .
+               ?pid ?hasmodel ?cmodel .
+               ?pid <fedora-view:lastModifiedDate> ?modified .
+               FILTER (?modified >= xsd:dateTime('%s'))
+               }''' % modified_since.strftime('%Y-%m-%dT%H:%M:%S')
+            graph = self.repo.risearch.find_statements(find_modified, language='sparql',
+                type='triples')
+
+            self.pids = set([str(p) for p in graph.subjects()])
+            self.cmodels_graph = graph
+            print '%d pids' % len(self.pids)
+            if verbosity >= v_normal:
+                self.stdout.write('Found %d objects modified since %s' % \
+                                  (len(self.pids), options.get('since')))
+
+            # if there is anything to index, load configured site indexes
+            if self.pids:
+                self.load_indexes()
+
+        # a list of pids to index, from an unknown site
         elif pids:
             # load configured site indexes so we can figure out which pids to index where
             self.load_indexes()
@@ -172,7 +210,7 @@ class Command(BaseCommand):
             self.load_pid_cmodels(pids=pids)
 
         # no site, no pids - nothing to index
-        else:	
+        else:
             raise CommandError('Neither site nor pids were specified.  Nothing to index.')
 
 
@@ -204,12 +242,12 @@ class Command(BaseCommand):
             i += 1
             if pbar:
                 pbar.update(i)
-            
+
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
                 self.stdout.write('Error: no content models found for %s - cannot index\n' % obj.pid)
                 continue
-                
+
             indexed = False
             # loop through the configured sites to see which (if any)
             # the current object should be indexed by
@@ -281,10 +319,10 @@ class Command(BaseCommand):
         if pids is not None:
             objs = [self.repo.get_object(pid) for pid in pids]
             query_filter =  ' || '.join('?pid = <%s>' % o.uri for o in objs)
-            
+
         elif content_models is not None:
             query_filter =  ' || '.join('?cmodel = <%s>' % cm for cm in content_models)
-        
+
         query = '''CONSTRUCT   { ?pid <%(has_model)s> ?cmodel }
         WHERE {
            ?pid <%(has_model)s> ?cmodel
@@ -292,8 +330,9 @@ class Command(BaseCommand):
         }
         ''' % {
            'has_model': modelns.hasModel,
-     	   'filter': query_filter
+            'filter': query_filter
         }
+        print query
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
 
@@ -305,7 +344,7 @@ class Command(BaseCommand):
         content model information for objects with any of the content
         models that a particular site indexes.'''
         for subj in self.cmodels_graph.subjects(predicate=modelns.hasModel):
-            # convert from URIRef to string 
+            # convert from URIRef to string
             yield str(subj)
 
 
@@ -319,4 +358,4 @@ class Command(BaseCommand):
 
 
 
-        
+
