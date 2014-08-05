@@ -2,4 +2,5 @@ django<1.5
 eulfedora
 sunburnt
 httplib2
-stompest
+# pin to known working version; 2.x breaks current code
+stompest==1.0.4
