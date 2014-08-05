@@ -271,7 +271,7 @@ class Command(BaseCommand):
             if indexed:
                 self.index_count += 1
             else:
-                self.stdout.write('Failed to index %s - none of the configured sites index this item\n'
+                self.stdout.write('Failed to index %s - none the configured sites index this item\n'
                                   % obj.pid)
 
         end_time = datetime.now()
@@ -321,11 +321,15 @@ class Command(BaseCommand):
             query_filter =  ' || '.join('?pid = <%s>' % o.uri for o in objs)
 
         elif content_models is not None:
-            query_filter =  ' || '.join('?cmodel = <%s>' % cm for cm in content_models)
+            # NOTE: need to filter on a different cmodel variable than the one
+            # being returned because *all* cmodels are needed in order to
+            # correctly identify which indexes support which objects
+            query_filter =  ' || '.join('?cm1 = <%s>' % cm for cm in content_models)
 
         query = '''CONSTRUCT   { ?pid <%(has_model)s> ?cmodel }
         WHERE {
-           ?pid <%(has_model)s> ?cmodel
+           ?pid <%(has_model)s> ?cmodel .
+           ?pid <%(has_model)s> ?cm1
            FILTER ( %(filter)s )
         }
         ''' % {
