@@ -24,6 +24,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import simplejson
 from httplib2 import iri2uri
+import requests
+from requests.auth import HTTPBasicAuth
 from sunburnt import sunburnt, SolrError
 import time
 from urlparse import urlparse
@@ -77,8 +79,10 @@ class SiteIndex(object):
         # configured site index name, from django settings
         self.name = name
 
-        # custom request headers; include current version in user-agent
-        request_headers = [('User-Agent', 'EULindexer/%s' % eulindexer.__version__ )]
+        # requests sesssion object for all http requests
+        self.session = requests.Session()
+        # custom request header: include current version in user-agent
+        self.session.headers.update({'User-Agent': 'EULindexer/%s' % eulindexer.__version__ })
 
         # If indexdata site is SSL and Fedora credentials are configured,
         # pass credentials to indexdata app via Basic Auth
@@ -86,13 +90,7 @@ class SiteIndex(object):
         parsed_url = urlparse(self.site_url)
         if (parsed_url.scheme == 'https' or getattr(settings, 'DEV_ENV', False)) and \
                getattr(settings, 'FEDORA_USER', None) and getattr(settings, 'FEDORA_PASSWORD', None):
-
-            token = base64.b64encode('%s:%s' % (settings.FEDORA_USER, settings.FEDORA_PASSWORD))
-            self._auth_token = 'Basic %s' % token
-            request_headers.append(('AUTHORIZATION', self._auth_token))
-
-        self.opener = urllib2.build_opener()
-        self.opener.addheaders = request_headers
+            self.session.auth = HTTPBasicAuth(settings.FEDORA_USER, settings.FEDORA_PASSWORD)
 
         self.load_configuration(solr_url)
 
@@ -103,8 +101,8 @@ class SiteIndex(object):
 
         # load the index configuration from the specified site url
         try:
-            response = self.opener.open(self.site_url)
-            index_config = simplejson.loads(response.read())
+            response = self.session.get(self.site_url)
+            index_config = response.json()
             logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
         except urllib2.URLError as err:
             raise SiteUnavailable(err)
@@ -208,23 +206,16 @@ class SiteIndex(object):
 
         try:
             start = time.time()
-            response = self.opener.open(indexdata_url)
-            json_value = response.read()
+            response = self.session.get(indexdata_url)
+            index_data = response.json()
             logger.debug('%s %d : %f sec', indexdata_url,
-                        response.code, time.time() - start)
+                        response.status_code, time.time() - start)
         except Exception as connection_error:
             logger.error('Error connecting to %s for %s: %s',
                          indexdata_url, pid, connection_error)
             # wrap exception and add more detail about what went wrong for db error log
             raise IndexDataReadError('Failed to load index data for %s from %s : %s',
                                      pid, indexdata_url, connection_error)
-
-        # it's possible we get data back but it can't be parsed as JSON
-        try:
-            index_data = simplejson.loads(json_value)
-        except ValueError:
-            raise Exception('Could not load index data for %s as JSON: %s',
-                            pid, json_value)
 
         try:
             start = time.time()

@@ -4,3 +4,4 @@ sunburnt
 httplib2
 # pin to known working version; 2.x breaks current code
 stompest==1.0.4
+requests

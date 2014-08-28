@@ -4,8 +4,19 @@ Change Log
 
 Release 0.5.0
 -------------
-* Add ``-i index_url`` option to ``reindex`` to allow indexing site data in
-  an alternate index.
+
+* Updated to Django 1.6.x
+* Enhancements to the **reindex**  script:
+
+  * ``-i index_url``: allow indexing site data into an alternate Solr instance.
+  * ``-m YYYY-MM-DD`` : reindex objects modified in Fedora since the specified
+    date
+  * ``-c content-model`` option now supports objects with more content models
+    than the one specified on the command-line
+
+* Unit tests now use django-nose
+* Logging has been overhauled to be more useful and filterable by level
+* Now uses :mod:`python-requests` for HTTP requests to configured sites
 
 Release 0.4.0
 -------------
@@ -14,7 +25,7 @@ Release 0.4.0
   renew stomp listen connection after a specified time of no activity.
 * Sample init.d script in ``scripts/eulindexer`` for use starting,
   stopping, reloading, and otherwise managing the ``indexer`` script
-  like a system service.  
+  like a system service.
 
 Release 0.3.0
 -------------
