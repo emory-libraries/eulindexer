@@ -18,17 +18,15 @@ from cStringIO import StringIO
 from datetime import datetime, timedelta
 import httplib2
 from mock import Mock, patch, DEFAULT
-import requests
 from requests.auth import HTTPBasicAuth
 from socket import error as socket_error
-from stompest.simple import Stomp
+from stompest.sync import Stomp
 from stompest.error import StompFrameError
 from sunburnt import SolrError
 
 from django.conf import settings
 from django.core.management.base import CommandError
 from django.test import TestCase
-from django.utils import simplejson
 
 from eulfedora.server import Repository
 

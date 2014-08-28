@@ -50,7 +50,8 @@ import logging
 from optparse import make_option
 import signal
 from socket import error as socketerror
-from stompest.simple import Stomp
+from stompest.config import StompConfig
+from stompest.sync.client import Stomp
 from stompest.error import StompFrameError
 from sunburnt import SolrError
 from time import sleep
@@ -123,7 +124,7 @@ class Command(BaseCommand):
             self.stomp_server = settings.INDEXER_STOMP_SERVER
             self.stomp_port = int(settings.INDEXER_STOMP_PORT)
 
-        self.listener = Stomp(self.stomp_server, self.stomp_port)
+        self.listener = Stomp(StompConfig('tcp://%s:%s' % (self.stomp_server, self.stomp_port)))
         self.listener.connect()
         logger.info('Connected to message queue on %s:%i',
                     self.stomp_server, self.stomp_port)
@@ -229,8 +230,8 @@ class Command(BaseCommand):
                         self.last_activity = datetime.now()
                         # NOTE: could make use of message body instead of/in addition to headers
                         # (includes datastream id for modify datastream API calls)
-                        pid = frame['headers']['pid']
-                        method = frame['headers']['methodName']
+                        pid = frame.headers['pid']
+                        method = frame.headers['methodName']
                         logger.debug('Received message: %s %s', method, pid)
                         self.listener.ack(frame)
 
