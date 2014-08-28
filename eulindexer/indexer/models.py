@@ -1,5 +1,5 @@
 # file eulindexer/indexer/models.py
-# 
+#
 #   Copyright 2010,2011 Emory University Libraries
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,6 @@ import httplib2
 import logging
 import socket
 import urllib2
-import warnings
 
 from django.conf import settings
 from django.db import models
@@ -35,16 +34,16 @@ logger = logging.getLogger(__name__)
 
 class IndexError(models.Model):
     'Database model for tracking errors when the indexer fails to process an item.'
-    site = models.CharField(max_length=100) 
+    site = models.CharField(max_length=100)
     object_id = models.CharField(max_length=255)
     time = models.DateTimeField(auto_now=True)
-    detail = models.CharField(max_length=255, 
+    detail = models.CharField(max_length=255,
         help_text='Error message or any other details about what went wrong')
     # possibly add retry count?
 
     def __unicode__(self):
         return '%s (%s) %s' % (self.object_id, self.site, self.time)
-    
+
 class SiteUnavailable(IOError):
     '''Custom Exception for error condition when a :class:`SiteIndex`
     instance fails to load the site configuration.'''
@@ -58,7 +57,7 @@ class SolrUnavailable(SiteUnavailable):
 
 class SiteIndex(object):
 
-    def __init__(self, site_url, solr_url=None):
+    def __init__(self, site_url, name, solr_url=None):
         '''An object representing a single configured site that we're
         indexing.
 
@@ -75,10 +74,12 @@ class SiteIndex(object):
         self.solr_url = solr_url or ''
         self.solr_interface = None
         self.content_models = []
+        # configured site index name, from django settings
+        self.name = name
 
         # custom request headers; include current version in user-agent
         request_headers = [('User-Agent', 'EULindexer/%s' % eulindexer.__version__ )]
-        
+
         # If indexdata site is SSL and Fedora credentials are configured,
         # pass credentials to indexdata app via Basic Auth
         # (always pass credentials when DEV_ENV is True for development purposes)
@@ -92,7 +93,7 @@ class SiteIndex(object):
 
         self.opener = urllib2.build_opener()
         self.opener.addheaders = request_headers
-        
+
         self.load_configuration(solr_url)
 
     def load_configuration(self, solr_url=None):
@@ -104,10 +105,10 @@ class SiteIndex(object):
         try:
             response = self.opener.open(self.site_url)
             index_config = simplejson.loads(response.read())
-            logger.debug('Index configuration for %s:\n%s' % (self.site_url, index_config))
+            logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
         except urllib2.URLError as err:
             raise SiteUnavailable(err)
-        
+
         if not solr_url and 'SOLR_URL' in index_config:
             solr_url = index_config['SOLR_URL']
 
@@ -138,17 +139,16 @@ class SiteIndex(object):
                 # to sunburnt init
                 solr_opts = {'http_connection': httplib2.Http(**http_opts)}
                 self.solr_interface = sunburnt.SolrInterface(self.solr_url, **solr_opts)
-                
+
             except socket.error as err:
-                logger.error('Unable to initialize SOLR connection at (%s) for application url %s' % (self.solr_url, self.site_url))
+                logger.error('Unable to initialize SOLR connection at (%s) for application url %s',
+                             self.solr_url, self.site_url)
                 raise SolrUnavailable(err)
-        
+
         if 'CONTENT_MODELS' in index_config:
             # the configuration returns a list of content model lists
             # convert to a list of sets for easier comparison
             self.content_models = [set(cm_list) for cm_list in index_config['CONTENT_MODELS']]
-
-        # FIXME: is it an error if either/both of these are not present?
 
         # log a summary of the configuration of the configuration that was loaded
         logger.info(self.config_summary())
@@ -203,35 +203,35 @@ class SiteIndex(object):
         :returns: True when indexing completes successfully
         '''
         indexdata_url = '%s/%s/' % (self.site_url.rstrip('/'), pid)
-        logger.debug('Requesting index data for %s at %s' % (pid, indexdata_url))
+        logger.debug('Requesting index data from %s for %s at %s',
+                     self.name, pid, indexdata_url)
 
         try:
             start = time.time()
             response = self.opener.open(indexdata_url)
             json_value = response.read()
-            logger.debug('%s %d : %f sec' % (indexdata_url,
-                                            response.code,
-                                            time.time() - start))
+            logger.debug('%s %d : %f sec', indexdata_url,
+                        response.code, time.time() - start)
         except Exception as connection_error:
-            logger.error('Error connecting to %s for %s: %s' % \
-                         (indexdata_url, pid, connection_error))
+            logger.error('Error connecting to %s for %s: %s',
+                         indexdata_url, pid, connection_error)
             # wrap exception and add more detail about what went wrong for db error log
-            raise IndexDataReadError('Failed to load index data for %s from %s : %s' % \
-                                     (pid, indexdata_url, connection_error))
-        
+            raise IndexDataReadError('Failed to load index data for %s from %s : %s',
+                                     pid, indexdata_url, connection_error)
+
         # it's possible we get data back but it can't be parsed as JSON
         try:
             index_data = simplejson.loads(json_value)
         except ValueError:
-            raise Exception('Could not load index data for %s as JSON: %s' % \
-                            (pid, json_value))
+            raise Exception('Could not load index data for %s as JSON: %s',
+                            pid, json_value)
 
         try:
             start = time.time()
             self.solr_interface.add(index_data)
-            logger.debug('Updated Solr: %f sec' % (time.time() - start))
+            logger.debug('Updated %s Solr for %s: %f sec', self.name, pid, time.time() - start)
         except SolrError as se:
-            logger.error('Error indexing for %s: %s' % (pid, se))
+            logger.error('Error updating %s index for %s: %s', self.name, pid, se)
             raise
 	    # possible errors: status 404 - solr not running/path incorrectly configured
             # schema error prints nicely, 404 is ugly...
@@ -245,13 +245,13 @@ class SiteIndex(object):
         ``pid`` or ``PID``) to remove the specified item from the
         index.  If an error occurs on deletion, a
         :class:`sunburnt.SolrError` may be raised.
-        
+
         :param pid - the pid of the object to remove from the index
         '''
-        logger.info('Deleting %s=%s' % \
-                    (self.solr_interface.schema.unique_field.name, pid))
+        logger.debug('Deleting %s=%s from %s',
+                    self.solr_interface.schema.unique_field.name, pid, self.name)
         self.solr_interface.delete({self.solr_interface.schema.unique_field.name: pid})
-        
+
 def init_configured_indexes():
     '''Initialize a :class:`SiteIndex` for each site configured
     in Django settings.
@@ -265,7 +265,7 @@ def init_configured_indexes():
     errors = {}
     for site, url in settings.INDEXER_SITE_URLS.iteritems():
         try:
-            indexes[site] = SiteIndex(url)
+            indexes[site] = SiteIndex(url, site)
         except SolrUnavailable as err:
             errors[site] = 'Solr unavailable: %s' % (err)
         except SiteUnavailable as err:
@@ -282,5 +282,3 @@ class IndexDataReadError(RecoverableIndexError):
     '''Custom exception for failure to retrieve the index data for an item; should be considered
     as possibly recoverable, since the site may be temporarily available.'''
     pass
-
-
