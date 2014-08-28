@@ -17,6 +17,8 @@ DATABASES = {
     },
 }
 
+# *Required* when not running in debug mode
+ALLOWED_HOSTS = ['localhost']
 
 DEBUG = False
 TEMPLATE_DEBUG = DEBUG
@@ -117,4 +119,3 @@ LOGGING = {
         }
     }
 }
- 
