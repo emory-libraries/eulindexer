@@ -336,7 +336,6 @@ class Command(BaseCommand):
            'has_model': modelns.hasModel,
             'filter': query_filter
         }
-        print query
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
 
@@ -359,7 +358,3 @@ class Command(BaseCommand):
         '''
         # FIXME: more efficient way to do this?
         return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
-
-
-
-
