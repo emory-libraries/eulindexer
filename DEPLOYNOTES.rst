@@ -65,10 +65,10 @@ Install/Configure System Dependencies
 Configuring Fedora for indexing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Currently, EULIndexer only supports Fedora "out of the box". Fedora is configured 
-by default to send all data ingests, modifications, and deletions to a message 
-queueing service. This enables indexers to listen on that service's queues for 
-updates and respond to them in custom-defined ways. This section describes the 
+Currently, EULIndexer only supports Fedora "out of the box". Fedora is configured
+by default to send all data ingests, modifications, and deletions to a message
+queueing service. This enables indexers to listen on that service's queues for
+updates and respond to them in custom-defined ways. This section describes the
 Fedora configuration necessary for this indexer project to communicate with it.
 
 Install Spring
@@ -246,4 +246,11 @@ not handled directly by the init script.
   before attempting to start it via the init script.
 
 
+Upgrade Notes
+=============
 
+Release 0.5
+-----------
+
+* Upgrade to Django 1.6.x requires that **ALLOWED_HOSTS** be configured if the
+  site is not running in debug mode.

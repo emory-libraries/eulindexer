@@ -59,10 +59,9 @@ Use ``python manage.py reindex -h`` for more details.
 
 
 import os, sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from optparse import make_option
 from rdflib import URIRef
-from urlparse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -99,6 +98,16 @@ class Command(BaseCommand):
         make_option('-m', '--modified-since', dest='since',
                     help='Index all objects modified since the specified date in YYYY-MM-DD format'),
     )
+
+    # class variables defined in setup
+    indexes = []
+    repo = None
+    content_models = []
+    pids = []
+    cmodels_graph = None
+
+    index_count = 0
+    err_count = 0
 
     def handle(self, *pids, **options):
         # verbosity should be set by django BaseCommand standard options
@@ -215,9 +224,6 @@ class Command(BaseCommand):
 
 
         # loop through the objects and index them
-        self.index_count = 0
-        self.err_count = 0
-
         pbar = None
         # check if progressbar is available and output is not redirected
         if ProgressBar and os.isatty(sys.stderr.fileno()):
@@ -233,6 +239,9 @@ class Command(BaseCommand):
                                             ETA()], maxval=total).start()
 
         i = 0
+        self.index_count = 0
+        self.err_count = 0
+
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
@@ -336,7 +345,6 @@ class Command(BaseCommand):
            'has_model': modelns.hasModel,
             'filter': query_filter
         }
-        print query
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
 
@@ -359,7 +367,3 @@ class Command(BaseCommand):
         '''
         # FIXME: more efficient way to do this?
         return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
-
-
-
-
