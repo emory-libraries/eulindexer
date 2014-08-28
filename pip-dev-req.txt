@@ -1,7 +1,7 @@
-unittest-xml-reporting>1.0.3
 mock
 unittest2
 coverage
 sphinx
 fabric
 pyPdf
+django-nose
