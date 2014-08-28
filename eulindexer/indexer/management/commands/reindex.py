@@ -239,6 +239,9 @@ class Command(BaseCommand):
                                             ETA()], maxval=total).start()
 
         i = 0
+        self.index_count = 0
+        self.err_count = 0
+
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object

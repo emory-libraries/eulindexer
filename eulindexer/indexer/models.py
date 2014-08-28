@@ -22,7 +22,6 @@ import urllib2
 
 from django.conf import settings
 from django.db import models
-from django.utils import simplejson
 from httplib2 import iri2uri
 import requests
 from requests.auth import HTTPBasicAuth
@@ -104,7 +103,7 @@ class SiteIndex(object):
             response = self.session.get(self.site_url)
             index_config = response.json()
             logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
-        except urllib2.URLError as err:
+        except requests.ConnectionError as err:
             raise SiteUnavailable(err)
 
         if not solr_url and 'SOLR_URL' in index_config:

@@ -52,6 +52,7 @@ import signal
 from socket import error as socketerror
 from stompest.simple import Stomp
 from stompest.error import StompFrameError
+from sunburnt import SolrError
 from time import sleep
 
 from django.core.management.base import BaseCommand, CommandError
