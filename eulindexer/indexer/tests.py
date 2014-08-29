@@ -402,6 +402,7 @@ class SiteIndexTest(TestCase):
     def test_request_headers(self, mocksunburnt, mockrequests):
         # non-ssl indexdata url
         mocksession = mockrequests.Session.return_value
+        mocksession.get.return_value.json.return_value = {}
         mocksession.headers = {}
         mocksession.auth = None
         index = SiteIndex('http://site.url', 'test-site')
@@ -428,6 +429,7 @@ class SiteIndexTest(TestCase):
     @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
     def test_indexes_item(self, mocksunburnt, mockrequests):
+        mockrequests.Session.return_value.get.return_value.json.return_value = {}
         index = SiteIndex('test-site-url', 'test-site')
         # define some content models and sets of cmodels for testing
         cmodels = {
