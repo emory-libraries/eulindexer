@@ -18,7 +18,7 @@ from cStringIO import StringIO
 from datetime import datetime, timedelta
 import httplib2
 from mock import Mock, patch, DEFAULT
-import requests
+import os
 from requests.auth import HTTPBasicAuth
 from socket import error as socket_error
 from stompest.sync import Stomp
@@ -501,6 +501,18 @@ class SiteIndexTest(TestCase):
     'site2': 'http://localhost:0002',
     'site3': 'http://localhost:0003'})
 class TestInitConfiguredIndexes(TestCase):
+
+    _http_proxy = None
+
+    def setUp(self):
+        # proxy causes issues with connection error in some cases, so unset
+        if 'HTTP_PROXY' in os.environ:
+            self._http_proxy = os.environ.get('HTTP_PROXY')
+            del os.environ['HTTP_PROXY']
+
+    def tearDown(self):
+        if self._http_proxy is not None:
+            os.environ['HTTP_PROXY'] = self._http_proxy
 
     def test_connection_error(self):
         # Try to connect to an unavailable server. Not ideal handling
