@@ -18,6 +18,7 @@ from cStringIO import StringIO
 from datetime import datetime, timedelta
 import httplib2
 from mock import Mock, patch, DEFAULT
+import requests
 from requests.auth import HTTPBasicAuth
 from socket import error as socket_error
 from stompest.sync import Stomp
@@ -27,6 +28,7 @@ from sunburnt import SolrError
 from django.conf import settings
 from django.core.management.base import CommandError
 from django.test import TestCase
+from django.test.utils import override_settings
 
 from eulfedora.server import Repository
 
@@ -36,35 +38,17 @@ from eulindexer.indexer.models import SiteIndex, IndexError, \
 	init_configured_indexes, IndexDataReadError, SiteUnavailable
 
 
+@override_settings(INDEXER_STOMP_SERVER='localhost',
+	INDEXER_STOMP_PORT='61613',
+	INDEXER_STOMP_CHANNEL='/topic/foo')
 class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
     # test the indexer command and its methods here
 
-    # django settings we will save for overriding and restoring
-    config_settings = ['INDEXER_SITE_URLS', 'INDEXER_STOMP_SERVER', 'INDEXER_STOMP_PORT',
-                       'INDEXER_STOMP_CHANNEL']
-
     def setUp(self):
-        # store configurations tests may modify or add
-        for cfg in self.config_settings:
-            setattr(self, '_%s' % cfg, getattr(settings, cfg, None))
-
-        # set values that the tests expect to be present
-        settings.INDEXER_STOMP_SERVER = 'localhost'
-        settings.INDEXER_STOMP_PORT = '61613'
-        settings.INDEXER_STOMP_CHANNEL = '/topic/foo'
-
         self.command = indexer.Command()
 
     def tearDown(self):
-        # restore settings
-        for cfg in self.config_settings:
-            original_value = getattr(self, '_%s' % cfg)
-            if original_value is None:
-                delattr(settings, cfg)
-            else:
-                setattr(settings, cfg, original_value)
-
         IndexError.objects.all().delete()
 
     def test_startup_error(self):
@@ -336,28 +320,10 @@ class IndexerTest(TestCase):
                          'listener.disconnect should be called based on idle-reconnect & last activity')
 
 
+@override_settings(DEV_ENV=False, FEDORA_USER=None, FEDORA_PASSWORD=None)
 class SiteIndexTest(TestCase):
     '''Tests for the SiteIndex object, which wraps the index
     configuration and indexing logic for a single site.'''
-
-
-    settings_keys = ['DEV_ENV', 'FEDORA_USER', 'FEDORA_PASSWORD']
-    _settings = {}
-
-    def setUp(self):
-        for key in self.settings_keys:
-            self._settings[key] = getattr(settings, key, None),
-
-        settings.DEV_ENV = False
-        settings.FEDORA_USER = None
-        settings.FEDORA_PASSWORD = None
-
-    def tearDown(self):
-        for key, val in self._settings.iteritems():
-            if val is None:
-                delattr(settings, key)
-            else:
-                setattr(settings, key, val)
 
     @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
@@ -398,7 +364,6 @@ class SiteIndexTest(TestCase):
 
     @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    @patch.object(settings, 'DEV_ENV', new=False)
     def test_request_headers(self, mocksunburnt, mockrequests):
         # non-ssl indexdata url
         mocksession = mockrequests.Session.return_value
@@ -458,7 +423,6 @@ class SiteIndexTest(TestCase):
 
         # superset - all required cmodels, plus others
         self.assertTrue(index.indexes_item([cmodels['item'], cmodels['item-plus'], cmodels['other']]))
-
 
     @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
@@ -532,25 +496,11 @@ class SiteIndexTest(TestCase):
         self.assert_(cmodels['item'] in distinct_cmodels)
         self.assertEqual(len(cmodels.keys()), len(distinct_cmodels))
 
-
+@override_settings(INDEXER_SITE_URLS={
+    'site1': 'http://localhost:0001',
+    'site2': 'http://localhost:0002',
+    'site3': 'http://localhost:0003'})
 class TestInitConfiguredIndexes(TestCase):
-
-    def setUp(self):
-        # store real configuration for sites to be indexed
-        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
-        # define sites for testing
-        settings.INDEXER_SITE_URLS = {
-            'site1': 'http://localhost:0001',
-            'site2': 'http://localhost:0002',
-            'site3': 'http://localhost:0003'
-        }
-
-    def tearDown(self):
-        # restore index site configuration
-        if self._INDEXER_SITE_URLS is None:
-            delattr(settings, 'INDEXER_SITE_URLS')
-        else:
-            settings.INDEXER_SITE_URLS = self._INDEXER_SITE_URLS
 
     def test_connection_error(self):
         # Try to connect to an unavailable server. Not ideal handling
@@ -584,25 +534,14 @@ class TestInitConfiguredIndexes(TestCase):
 
         # solr initialization, etc. is handled by SiteIndex class & tested there
 
+
+@override_settings(INDEXER_SITE_URLS={'s1': 'http://ess.one', 's2': 'http://ess.two'})
 class ReindexTest(TestCase):
     '''Unit tests for the reindex manage command.'''
 
     def setUp(self):
-        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
-        # set some test site configs before initializing command
-        settings.INDEXER_SITE_URLS = {
-            's1': 'http://ess.one',
-            's2': 'http://ess.two',
-        }
         self.command = reindex.Command()
         self.command.stdout = StringIO()
-
-
-    def tearDown(self):
-        if self._INDEXER_SITE_URLS is not None:
-            setattr(settings, 'INDEXER_SITE_URLS', self._INDEXER_SITE_URLS)
-        else:
-            delattr(settings, 'INDEXER_SITE_URLS')
 
     def test_load_pid_cmodels(self):
         pids = ['pid:1', 'pid:2', 'pid:3']
