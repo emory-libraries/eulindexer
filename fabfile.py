@@ -51,7 +51,7 @@ def configure(path=None, user=None, url_prefix=None, remote_proxy=None):
 
 def config_from_git():
     """Infer revision from local git checkout."""
-    # if not a released version, use revision tag 
+    # if not a released version, use revision tag
     env.git_rev = local('git rev-parse --short HEAD', capture=True).strip()
     if eulindexer.__version_info__[-1]:
         env.rev_tag = '-r' + env.git_rev
@@ -60,12 +60,12 @@ def prep_source():
     'Export the code from git and do local prep.'
     require('git_rev', 'build_dir',
             used_for='Exporting code from git into build area')
-    
+
     local('mkdir -p build')
     local('rm -rf build/%(build_dir)s' % env)
     # create a tar archive of the specified version and extract inside the bulid directory
     local('git archive --format=tar --prefix=%(build_dir)s/ %(git_rev)s | (cd build && tar xf -)' % env)
-    
+
     # localsettings.py will be handled remotely
 
     # update wsgi file if a url prefix is requested
@@ -122,12 +122,12 @@ def setup_virtualenv():
             if env.remote_proxy:
                 pip_cmd += ' --proxy=%(remote_proxy)s' % env
             sudo(pip_cmd, user=env.remote_acct)
-                        
+
 
 def configure_site():
     'Copy configuration files into the remote source tree.'
     with cd(env.remote_path):
-        if not files.exists('localsettings.py'):  
+        if not files.exists('localsettings.py'):
             abort('Configuration file is not in expected location: %(remote_path)s/localsettings.py' % env)
         sudo('cp localsettings.py %(build_dir)s/%(project)s/localsettings.py' % env,
              user=env.remote_acct)
@@ -135,7 +135,7 @@ def configure_site():
     # collect static files to be served out by apache
     with cd('%(remote_path)s/%(build_dir)s' % env):
         with prefix('source env/bin/activate'):
-            sudo('python %(project)s/manage.py collectstatic --noinput' % env,
+            sudo('python manage.py collectstatic --noinput' % env,
                  user=env.remote_acct)
 
 def update_links():
@@ -172,7 +172,7 @@ def build_source_package(path=None, user=None, url_prefix='', remote_proxy=''):
 @task
 def deploy(path=None, user=None, url_prefix='', remote_proxy=''):
     '''Deploy the code to a remote server.
-    
+
     Parameters:
       path: base deploy directory on remote host; deploy expects a
             localsettings.py file in thir directory
@@ -233,9 +233,9 @@ def rm_old_builds(path=None, user=None, noinput=False):
             # get current and previous links so we don't remove either of them
             current = sudo('readlink current', user=env.remote_acct) if files.exists('current') else None
             previous = sudo('readlink previous', user=env.remote_acct) if files.exists('previous') else None
-            
+
         # split dir listing on newlines and strip whitespace
-        dir_items = [n.strip() for n in dir_listing.split('\n')] 
+        dir_items = [n.strip() for n in dir_listing.split('\n')]
         # regex based on how we generate the build directory:
         #   project name, numeric version, optional pre/dev suffix, optional revision #
         build_dir_regex = r'^%(project)s-[0-9.]+(-[A-Za-z0-9_-]+)?(-r[0-9a-f]+)?$' % env
@@ -254,4 +254,3 @@ def rm_old_builds(path=None, user=None, noinput=False):
                     sudo('rm -rf %s' % dir, user=env.remote_acct)
         else:
             puts('No old build directories to remove')
- 
