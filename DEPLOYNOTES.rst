@@ -254,3 +254,6 @@ Release 0.5
 
 * Upgrade to Django 1.6.x requires that **ALLOWED_HOSTS** be configured if the
   site is not running in debug mode.
+* Because of the Django upgrade, ``manage.py`` is now located at the top level
+  instead of inside the project.  Any cron scripts referencing indexer or reindex
+  scripts will need to be updated with the correct path.
