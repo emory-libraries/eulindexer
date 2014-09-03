@@ -14,15 +14,13 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import base64
-import httplib2
 import logging
+import os
 import socket
-import urllib2
+import ssl
 
 from django.conf import settings
 from django.db import models
-from httplib2 import iri2uri
 import requests
 from requests.auth import HTTPBasicAuth
 from sunburnt import sunburnt, SolrError
@@ -124,20 +122,33 @@ class SiteIndex(object):
             # unicode object. coerce it into a string (by way of iri2uri in
             # case there are actual non-ascii chars in the iri) so that we
             # can include unicode in our index data.
-            solr_url = str(iri2uri(solr_url))
+            # solr_url = str(iri2uri(solr_url))
             self.solr_url = solr_url
+
+            session = requests.Session()
+
+            if hasattr(settings, 'SOLR_CA_CERT_PATH'):
+                session.cert = settings.SOLR_CA_CERT_PATH
+                session.verify = True
+            if getattr(settings, 'SOLR_DISABLE_CERT_CHECK', False):
+                session.verify = False
+
+            # configure requests to use http proxy if one is set in ENV
+            http_proxy = os.getenv('HTTP_PROXY', None)
+            if http_proxy:
+                parsed_proxy = urlparse(http_proxy)
+                session.proxies = {
+                   parsed_proxy.scheme: http_proxy   # i.e., 'http': 'hostname:3128'
+                }
+
+            # pass in the constructed requests session as the connection to be used
+            # when making requests of solr
+            # solr_opts = {'http_connection': session}
 
             # Instantiate a connection to this solr instance.
             try:
-                # initialize a solr connection with a customized http connection
-                http_opts = {}
-                # if a cert file is configured, add it to http options
-                if hasattr(settings, 'SOLR_CA_CERT_PATH'):
-                    http_opts['ca_certs'] = settings.SOLR_CA_CERT_PATH
-                # create a new http connection with the configured options to pass
-                # to sunburnt init
-                solr_opts = {'http_connection': httplib2.Http(**http_opts)}
-                self.solr_interface = sunburnt.SolrInterface(self.solr_url, **solr_opts)
+                self.solr_interface = sunburnt.SolrInterface(self.solr_url,
+                                                             http_connection=session)
 
             except socket.error as err:
                 logger.error('Unable to initialize SOLR connection at (%s) for application url %s',
@@ -208,15 +219,21 @@ class SiteIndex(object):
         try:
             start = time.time()
             response = self.session.get(indexdata_url)
-            index_data = response.json()
+            if response.status_code == requests.codes.ok:
+                index_data = response.json()
+            else:
+                raise IndexDataReadError('Failed to load index data for %s from %s (%s)' %
+                                     (pid, indexdata_url, response.status_code))
             logger.debug('%s %d : %f sec', indexdata_url,
                         response.status_code, time.time() - start)
+        except IndexDataReadError:
+            raise
         except Exception as connection_error:
             logger.error('Error connecting to %s for %s: %s',
                          indexdata_url, pid, connection_error)
             # wrap exception and add more detail about what went wrong for db error log
-            raise IndexDataReadError('Failed to load index data for %s from %s : %s',
-                                     pid, indexdata_url, connection_error)
+            raise IndexDataReadError('Failed to load index data for %s from %s : %s' %
+                                     (pid, indexdata_url, connection_error))
 
         try:
             start = time.time()
@@ -225,6 +242,7 @@ class SiteIndex(object):
         except SolrError as se:
             logger.error('Error updating %s index for %s: %s', self.name, pid, se)
             raise
+
 	    # possible errors: status 404 - solr not running/path incorrectly configured
             # schema error prints nicely, 404 is ugly...
 
