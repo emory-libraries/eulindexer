@@ -267,10 +267,6 @@ class Command(BaseCommand):
             content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(obj.uri),
                                                                     predicate=modelns.hasModel)]
 
-            # self.stats['total'] += 1
-            # if pbar:
-            #     pbar.update(self.stats['total'])
-
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
                 self.stdout.write('Error: no content models found for %s - cannot index\n' % obj.pid)
@@ -306,7 +302,7 @@ class Command(BaseCommand):
             timediff = (end_time - start_time)
 
             self.stdout.write('Indexed %d item%s in %s\n' % \
-                              (self.stats['indexed'], '' if self.stats['indexed'] == 1 else 's',
+                              (self.stats['total'], '' if self.stats['total'] == 1 else 's',
                                timediff))
             # if err count is not zero, report it also
             if self.stats['error']:
@@ -451,8 +447,9 @@ class Reporter(threading.Thread):
 
                 # error indexing
                 else:
-                    self.stdout.write('Index error in site %s: %s\n' % \
-                                      (site_index.name, err))
+                    # NOTE: pid could be redundant, but better to include in case not
+                    self.stdout.write('Index error in site %s for %s: %s\n' % \
+                                      (site_index.name, pid, err))
                     self.stats['error'] += 1
 
                 self.stats['total'] = len(self.pids)
