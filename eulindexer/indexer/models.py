@@ -101,8 +101,11 @@ class SiteIndex(object):
         # load the index configuration from the specified site url
         try:
             response = self.session.get(self.site_url)
-            index_config = response.json()
-            logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
+            if response.status_code == requests.codes.ok:
+                index_config = response.json()
+                logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
+            else:
+                raise SiteUnavailable('%s (%s)' % (self.site_url, response.status_code))
         except requests.ConnectionError as err:
             raise SiteUnavailable(err)
 
