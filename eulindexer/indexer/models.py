@@ -66,6 +66,8 @@ class SiteIndex(object):
                return a json object describing content models to index and
                an index url where index data for this site's objects will be
                sent.
+        :param name: short-hand name of the site; used for logging, to indicate
+               which content is indexed in which sites
         :param solr_url: optional override. If set, this site will use the
                specified URL for the index instead of getting that URL from
                the site configuration. The rest of the site configuration
