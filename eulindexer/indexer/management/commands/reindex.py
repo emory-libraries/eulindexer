@@ -146,7 +146,7 @@ class Command(BaseCommand):
                 self.stdout.write('Loading index configuration for %s' % site)
             try:
                 self.indexes = {
-                    site: SiteIndex(settings.INDEXER_SITE_URLS[site],
+                    site: SiteIndex(settings.INDEXER_SITE_URLS[site], name=site,
                                     solr_url=index_url)
                 }
             except SiteUnavailable as err:
