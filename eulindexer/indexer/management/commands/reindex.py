@@ -254,7 +254,7 @@ class Command(BaseCommand):
         # start the requested number of worker threads
         # NOTE: might not want multiple threads for just a few pids...
         for i in range(options.get('concurrency', 1)):
-            v = Indexer(self.todo_queue, self.done_queue, self.stats)
+            v = Indexer(self.todo_queue, self.done_queue)
             v.start()
 
         # start a single reporter thread to pick up completed items
@@ -277,12 +277,6 @@ class Command(BaseCommand):
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
                     self.todo_queue.put((index, obj.pid))
-
-            # if indexed:
-            #     self.stats['indexed'] += 1
-            # else:
-            #     self.stdout.write('Failed to index %s - none the configured sites index this item\n'
-            #                       % obj.pid)
 
         # queue.join blocks; check periodically if the need to check/sleep/interrupt
         while not self.todo_queue.empty():
@@ -383,12 +377,10 @@ class Indexer(threading.Thread):
     '''Thread class for indexing items in a queue.'''
     daemon = True
 
-    def __init__(self, todo_queue, done_queue, stats):
+    def __init__(self, todo_queue, done_queue):
         threading.Thread.__init__(self)
         self.todo = todo_queue
         self.done = done_queue
-        self.stats = stats
-
 
     def run(self):
         while True:
@@ -398,11 +390,9 @@ class Indexer(threading.Thread):
                 site_index, pid = item
                 try:
                     indexed = site_index.index_item(pid)
-                    self.stats['indexed'] += 1
                     err = None
                 except Exception as err:
                     indexed = False
-                    self.stats['error'] += 1
 
                 # stick in done queue a tuple of site index, pid,
                 # index success or failure, and error if any
