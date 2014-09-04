@@ -13,10 +13,14 @@ Release 0.5.0
     date
   * ``-c content-model`` option now supports objects with more content models
     than the one specified on the command-line
+  * Script is now threaded; use the ``--concurrency`` option to specify the
+    number of threads to be used when reindexing (current default is 4)
 
 * Unit tests now use django-nose
 * Logging has been overhauled to be more useful and filterable by level
-* Now uses :mod:`python-requests` for HTTP requests to configured sites
+* Now uses :mod:`requests` for HTTP requests to configured sites
+* Now using a newer version of :mod:`sunburnt`; configured to use
+  :mod:`requests` for HTTP connections to Solr
 
 Release 0.4.0
 -------------
