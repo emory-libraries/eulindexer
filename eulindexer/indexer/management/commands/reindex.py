@@ -59,9 +59,13 @@ Use ``python manage.py reindex -h`` for more details.
 
 
 import os, sys
+from collections import defaultdict
 from datetime import datetime
 from optparse import make_option
+from Queue import Queue, Empty as EmptyQueue
 from rdflib import URIRef
+import threading
+from time import sleep
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -97,6 +101,8 @@ class Command(BaseCommand):
                     help='Index all objects with the specified content model'),
         make_option('-m', '--modified-since', dest='since',
                     help='Index all objects modified since the specified date in YYYY-MM-DD format'),
+        make_option('--concurrency', type=int, metavar='N', default=1,
+                    help='Number of concurrent validation/repair threads to run (default: %(default)d)')
     )
 
     # class variables defined in setup
@@ -106,16 +112,20 @@ class Command(BaseCommand):
     pids = []
     cmodels_graph = None
 
-    index_count = 0
-    err_count = 0
+    stats = defaultdict(int)
+
+    todo_queue = Queue()
+    done_queue = Queue()
+
+    v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
 
     def handle(self, *pids, **options):
         # verbosity should be set by django BaseCommand standard options
-        v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
+
         if 'verbosity' in options:
             verbosity = int(options['verbosity'])
         else:
-            verbosity = v_normal
+            verbosity = self.v_normal
 
         if options.get('index_url', None) and not options.get('site', None):
             raise CommandError('--index_url requires --site')
@@ -142,7 +152,7 @@ class Command(BaseCommand):
                 index_url = options['index_url']
 
             # only load the configuration for the one site we are interested in
-            if verbosity > v_normal:
+            if verbosity > self.v_normal:
                 self.stdout.write('Loading index configuration for %s' % site)
             try:
                 self.indexes = {
@@ -158,7 +168,7 @@ class Command(BaseCommand):
             # requires a combination of content models, this may
             # return extra objects, but they will be ignored at index time.
             self.content_models = self.indexes[site].distinct_content_models()
-            if verbosity >= v_normal:
+            if verbosity >= self.v_normal:
                 self.stdout.write('Querying Fedora for objects with content models:\n %s\n' % \
                                   ', '.join(self.content_models))
             self.load_pid_cmodels(content_models=self.content_models)
@@ -167,7 +177,7 @@ class Command(BaseCommand):
 
         elif 'cmodel' in options and options['cmodel']:
             cmodel_pid = options['cmodel']
-            if verbosity > v_normal:
+            if verbosity > self.v_normal:
                 self.stdout.write("Indexing objects with content model '%s'\n" % \
                                   cmodel_pid)
             # get the content model object from fedora in order to
@@ -200,8 +210,7 @@ class Command(BaseCommand):
 
             self.pids = set([str(p) for p in graph.subjects()])
             self.cmodels_graph = graph
-            print '%d pids' % len(self.pids)
-            if verbosity >= v_normal:
+            if verbosity >= self.v_normal:
                 self.stdout.write('Found %d objects modified since %s' % \
                                   (len(self.pids), options.get('since')))
 
@@ -214,7 +223,7 @@ class Command(BaseCommand):
             # load configured site indexes so we can figure out which pids to index where
             self.load_indexes()
             self.pids = pids
-            if verbosity >= v_normal:
+            if verbosity >= self.v_normal:
                 self.stdout.write('Querying Fedora for object content models\n')
             self.load_pid_cmodels(pids=pids)
 
@@ -238,9 +247,19 @@ class Command(BaseCommand):
                 pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(), ')', Bar(),
                                             ETA()], maxval=total).start()
 
-        i = 0
-        self.index_count = 0
-        self.err_count = 0
+        self.stats['total'] = 0
+        self.stats['indexed'] = 0
+        self.stats['error'] = 0
+
+        # start the requested number of worker threads
+        # NOTE: might not want multiple threads for just a few pids...
+        for i in range(options.get('concurrency', 1)):
+            v = Indexer(self.todo_queue, self.done_queue)
+            v.start()
+
+        # start a single reporter thread to pick up completed items
+        vr = Reporter(self.done_queue, options, self.stats, pbar, self.stdout)
+        vr.start()
 
         for pid in self.pids:
             obj = self.repo.get_object(pid)
@@ -248,55 +267,40 @@ class Command(BaseCommand):
             content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(obj.uri),
                                                                     predicate=modelns.hasModel)]
 
-            i += 1
-            if pbar:
-                pbar.update(i)
-
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
                 self.stdout.write('Error: no content models found for %s - cannot index\n' % obj.pid)
                 continue
 
-            indexed = False
             # loop through the configured sites to see which (if any)
             # the current object should be indexed by
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
-                    try:
-                        indexed = index.index_item(obj.pid)
-                        if verbosity > v_normal:
-                            # if site was specified as an argument, don't report it for each item
-                            if options['site']:
-                                site_detail = ''
-                            else:
-                                site_detail = '(site: %s)' % site
-                            self.stdout.write('Indexed %s %s\n' % (obj.pid, site_detail))
-                    except Exception as e:
-                        # if an error occurs on a single item, report it but keep going
-                        self.stdout.write('Error indexing %s in site %s: %s\n' % \
-                                          (obj.pid, site, e))
-                        self.err_count += 1
+                    self.todo_queue.put((index, obj.pid))
 
-            if indexed:
-                self.index_count += 1
-            else:
-                self.stdout.write('Failed to index %s - none the configured sites index this item\n'
-                                  % obj.pid)
+        # queue.join blocks; check periodically if the need to check/sleep/interrupt
+        while not self.todo_queue.empty():
+            sleep(1)
+        self.todo_queue.join()
+
+        while not self.done_queue.empty():
+            sleep(1)
+        self.done_queue.join()
 
         end_time = datetime.now()
         if pbar:
             pbar.finish()
 
-        if verbosity >= v_normal:
+        if verbosity >= self.v_normal:
             # report # of items indexed, even if it is zero
             timediff = (end_time - start_time)
 
             self.stdout.write('Indexed %d item%s in %s\n' % \
-                              (self.index_count, '' if self.index_count == 1 else 's',
+                              (self.stats['total'], '' if self.stats['total'] == 1 else 's',
                                timediff))
             # if err count is not zero, report it also
-            if self.err_count:
-                self.stdout.write('%d errors on attempts to index\n' % self.err_count)
+            if self.stats['error']:
+                self.stdout.write('%(error)d errors on attempts to index\n' % self.stats)
 
     def load_indexes(self):
         # load configured site indexes so we can figure out which pids to index where
@@ -367,3 +371,82 @@ class Command(BaseCommand):
         '''
         # FIXME: more efficient way to do this?
         return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
+
+
+class Indexer(threading.Thread):
+    '''Thread class for indexing items in a queue.'''
+    daemon = True
+
+    def __init__(self, todo_queue, done_queue):
+        threading.Thread.__init__(self)
+        self.todo = todo_queue
+        self.done = done_queue
+
+    def run(self):
+        while True:
+            try:
+                item = self.todo.get()
+                # item should be a tuple of site index and pid
+                site_index, pid = item
+                try:
+                    indexed = site_index.index_item(pid)
+                    err = None
+                except Exception as err:
+                    indexed = False
+
+                # stick in done queue a tuple of site index, pid,
+                # index success or failure, and error if any
+                self.done.put((site_index, pid, indexed, err))
+
+                self.todo.task_done()
+            except EmptyQueue:
+                sleep(1)
+
+class Reporter(threading.Thread):
+    '''Thread class with common logic for handling items in the
+    ``done`` queue and reporting where appropriate.'''
+
+    daemon = True
+
+    def __init__(self, done_queue, options, stats, pbar=None, stdout=None):
+        threading.Thread.__init__(self)
+        self.done = done_queue
+        self.options = options
+        self.pbar = pbar
+        self.stats = stats
+        self.stdout = stdout
+
+        # keep track of total unique pids indexed (even if indexed in multiple sites)
+        self.pids = set()
+
+    def run(self):
+        while True:
+            try:
+                site_index, pid, indexed, err = self.done.get()
+                self.pids.add(pid)
+                # successfully indexed
+                if indexed:
+                    self.stats['indexed'] += 1
+                    if int(self.options.get('verbosity', Command.v_normal)) > Command.v_normal:
+                        # if site was specified as an argument, don't report it for each item
+                        if self.options['site']:
+                            site_detail = ''
+                        else:
+                            site_detail = '(site: %s)' % site_index.name
+                        self.stdout.write('Indexed %s %s\n' % (pid, site_detail))
+
+                # error indexing
+                else:
+                    # NOTE: pid could be redundant, but better to include in case not
+                    self.stdout.write('Index error in site %s for %s: %s\n' % \
+                                      (site_index.name, pid, err))
+                    self.stats['error'] += 1
+
+                self.stats['total'] = len(self.pids)
+                if self.pbar:
+                    self.pbar.update(self.stats['total'])
+
+                self.done.task_done()
+
+            except EmptyQueue:
+                sleep(1)

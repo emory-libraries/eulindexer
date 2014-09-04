@@ -14,15 +14,13 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import base64
-import httplib2
 import logging
+import os
 import socket
-import urllib2
+import ssl
 
 from django.conf import settings
 from django.db import models
-from httplib2 import iri2uri
 import requests
 from requests.auth import HTTPBasicAuth
 from sunburnt import sunburnt, SolrError
@@ -103,8 +101,11 @@ class SiteIndex(object):
         # load the index configuration from the specified site url
         try:
             response = self.session.get(self.site_url)
-            index_config = response.json()
-            logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
+            if response.status_code == requests.codes.ok:
+                index_config = response.json()
+                logger.debug('Index configuration for %s:\n%s', self.site_url, index_config)
+            else:
+                raise SiteUnavailable('%s (%s)' % (self.site_url, response.status_code))
         except requests.ConnectionError as err:
             raise SiteUnavailable(err)
 
@@ -112,33 +113,29 @@ class SiteIndex(object):
             solr_url = index_config['SOLR_URL']
 
         if solr_url:
-            # work around weirdness in sunburnt or httplib (not sure which).
-            # sunburnt (as of 0.5) utf8 encodes index data, but if you pass
-            # it a unicode url then it passes that unicode straight through
-            # to httplib. when httplib tries to concatenate the unicode url
-            # with string index data, python coerces the index data into a
-            # unicode object, assumes it's ascii, and throws an exception
-            # when it's not. the upshot is that if you pass sunburnt a
-            # unicode url, you can't have unicode index data. our solr url
-            # comes from a json object and is thus always represented as a
-            # unicode object. coerce it into a string (by way of iri2uri in
-            # case there are actual non-ascii chars in the iri) so that we
-            # can include unicode in our index data.
-            solr_url = str(iri2uri(solr_url))
-            self.solr_url = solr_url
+            self.solr_url =     solr_url
+            session = requests.Session()
+
+            if hasattr(settings, 'SOLR_CA_CERT_PATH'):
+                session.cert = settings.SOLR_CA_CERT_PATH
+                session.verify = True
+            if getattr(settings, 'SOLR_DISABLE_CERT_CHECK', False):
+                session.verify = False
+
+            # configure requests to use http proxy if one is set in ENV
+            http_proxy = os.getenv('HTTP_PROXY', None)
+            if http_proxy:
+                parsed_proxy = urlparse(http_proxy)
+                session.proxies = {
+                   parsed_proxy.scheme: http_proxy   # i.e., 'http': 'hostname:3128'
+                }
 
             # Instantiate a connection to this solr instance.
+            # pass in the constructed requests session as the connection to be used
+            # when making requests of solr
             try:
-                # initialize a solr connection with a customized http connection
-                http_opts = {}
-                # if a cert file is configured, add it to http options
-                if hasattr(settings, 'SOLR_CA_CERT_PATH'):
-                    http_opts['ca_certs'] = settings.SOLR_CA_CERT_PATH
-                # create a new http connection with the configured options to pass
-                # to sunburnt init
-                solr_opts = {'http_connection': httplib2.Http(**http_opts)}
-                self.solr_interface = sunburnt.SolrInterface(self.solr_url, **solr_opts)
-
+                self.solr_interface = sunburnt.SolrInterface(self.solr_url,
+                                                             http_connection=session)
             except socket.error as err:
                 logger.error('Unable to initialize SOLR connection at (%s) for application url %s',
                              self.solr_url, self.site_url)
@@ -208,25 +205,44 @@ class SiteIndex(object):
         try:
             start = time.time()
             response = self.session.get(indexdata_url)
-            index_data = response.json()
+            if response.status_code == requests.codes.ok:
+                index_data = response.json()
+            else:
+                raise IndexDataReadError('Failed to load index data for %s from %s (%s)' %
+                                     (pid, indexdata_url, response.status_code))
             logger.debug('%s %d : %f sec', indexdata_url,
                         response.status_code, time.time() - start)
+        except IndexDataReadError:
+            raise
         except Exception as connection_error:
             logger.error('Error connecting to %s for %s: %s',
                          indexdata_url, pid, connection_error)
             # wrap exception and add more detail about what went wrong for db error log
-            raise IndexDataReadError('Failed to load index data for %s from %s : %s',
-                                     pid, indexdata_url, connection_error)
+            raise IndexDataReadError('Failed to load index data for %s from %s : %s' %
+                                     (pid, indexdata_url, connection_error))
 
         try:
             start = time.time()
             self.solr_interface.add(index_data)
             logger.debug('Updated %s Solr for %s: %f sec', self.name, pid, time.time() - start)
         except SolrError as se:
-            logger.error('Error updating %s index for %s: %s', self.name, pid, se)
-            raise
+            # if possible, pull error detail from the response
+            # this works for 400 errors (e.g., bad index data, such as multiple values
+            # for a non-multivalued field); not sure about others
+            if hasattr(se.message, 'content') and '<str name="msg">' in se.message.content:
+                msg = se.message.content
+                start_str = '<str name="msg">'
+                end_str = '</str>'
+                err_detail = msg[msg.index(start_str) + len(start_str):msg.index(end_str)]
+            else:
+                # as a fallback, just re=use the existing error message
+                err_detail = se.message
+
+            logger.error('Error updating %s index for %s: %s', self.name, pid, err_detail)
+            raise SolrError(err_detail)
+
 	    # possible errors: status 404 - solr not running/path incorrectly configured
-            # schema error prints nicely, 404 is ugly...
+        # schema error prints nicely, 404 is ugly...
 
         # Return that item was successfully indexed
         return True
