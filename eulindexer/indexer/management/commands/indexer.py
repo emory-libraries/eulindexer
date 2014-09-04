@@ -350,10 +350,13 @@ class Command(BaseCommand):
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, attempt to index
                 if datetime.now() - self.to_index[pid].time >= self.index_delta:
-                    logger.info('Indexing %s', pid)
+                    sites_to_index = self.to_index[pid].sites_to_index
+
+                    logger.info('Indexing %s in %s',
+                        pid, ', '.join(sites_to_index))
 
                     # a single object could be indexed by multiple sites; index all of them
-                    for site in self.to_index[pid].sites_to_index:
+                    for site in sites_to_index:
                         self.index_item(pid, self.to_index[pid], site)
 
                     if not self.to_index[pid].sites_to_index:
