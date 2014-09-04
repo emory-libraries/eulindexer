@@ -101,7 +101,7 @@ class Command(BaseCommand):
                     help='Index all objects with the specified content model'),
         make_option('-m', '--modified-since', dest='since',
                     help='Index all objects modified since the specified date in YYYY-MM-DD format'),
-        make_option('--concurrency', type=int, metavar='N', default=1,
+        make_option('--concurrency', type=int, metavar='N', default=4,
                     help='Number of concurrent validation/repair threads to run (default: %(default)d)')
     )
 
