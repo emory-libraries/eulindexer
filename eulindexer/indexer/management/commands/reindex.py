@@ -248,7 +248,8 @@ class Command(BaseCommand):
                 total = self.total_from_graph()
             # init progress bar if we're indexing enough items to warrant it
             if total >= 5:
-                pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(), ')', Bar(),
+                pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(),
+                                            '/%s)' % total, Bar(),
                                             ETA()], maxval=total).start()
 
         self.stats['total'] = 0
