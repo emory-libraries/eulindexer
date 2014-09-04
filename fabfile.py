@@ -106,10 +106,9 @@ def extract_source():
 def setup_virtualenv():
     'Create a virtualenv and install required packages on the remote server.'
     with cd('%(remote_path)s/%(build_dir)s' % env):
-        # TODO: we should be using an http proxy here  (pip --proxy)
-        # create the virtualenv under the build dir
-        sudo('virtualenv --no-site-packages env',
-             user=env.remote_acct)
+        sudo('virtualenv --prompt=\'[%s]\' env' \
+            % (env['build_dir']), user=env.remote_acct)
+
         # activate the environment and install required packages
         with prefix('source env/bin/activate'):
             # required packages
