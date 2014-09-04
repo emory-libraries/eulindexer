@@ -90,6 +90,9 @@ class Command(BaseCommand):
 
     args = '<pid pid ...>'
 
+    #: default number of threads to use (override with --concurrency)
+    default_num_threads = 4
+
     option_list = BaseCommand.option_list + (
         make_option('-s', '--site', type='choice', dest='site',
                     choices=settings.INDEXER_SITE_URLS.keys(),
@@ -101,8 +104,9 @@ class Command(BaseCommand):
                     help='Index all objects with the specified content model'),
         make_option('-m', '--modified-since', dest='since',
                     help='Index all objects modified since the specified date in YYYY-MM-DD format'),
-        make_option('--concurrency', type=int, metavar='N', default=4,
-                    help='Number of concurrent validation/repair threads to run (default: %(default)d)')
+        make_option('--concurrency', type=int, metavar='N', default=default_num_threads,
+                    help='Number of concurrent validation/repair threads to run (default: %d)' % \
+                         default_num_threads)
     )
 
     # class variables defined in setup
