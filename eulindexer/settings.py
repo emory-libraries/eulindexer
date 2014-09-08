@@ -1,6 +1,6 @@
 # Django settings for eulindexer
 
-import os 
+import os
 
 # Get the directory of this file for relative dir paths.
 # Django sets too many absolute paths.
@@ -84,7 +84,7 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.auth.middleware.AuthenticationMiddleware',
 )
 
-INSTALLED_APPS = (
+INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.admin',
     'django.contrib.contenttypes',
@@ -92,7 +92,7 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
     'eulfedora',
     'eulindexer.indexer',
-)
+]
 
 REPO_DOCUMENT_CLASS = 'fedora.models.DocumentObject'
 
@@ -108,15 +108,20 @@ except NameError:
     pass
 
 
+django_nose = None
 try:
-    # use xmlrunner if it's installed; default runner otherwise. download
-    # it from http://github.com/danielfm/unittest-xml-reporting/ to output
-    # test results in JUnit-compatible XML.
-    import xmlrunner
-    TEST_RUNNER='xmlrunner.extra.djangotestrunner.XMLTestRunner'
-    TEST_OUTPUT_DIR='test-results'
-    TEST_OUTPUT_DESCRIPTIONS = False
-    TEST_OUTPUT_VERBOSE = False
+    # NOTE: errors if DATABASES is not configured (in some cases),
+    # so this must be done after importing localsettings
+    import django_nose
 except ImportError:
     pass
 
+# - only if django_nose is installed, so it is only required for development
+if django_nose is not None:
+    INSTALLED_APPS.append('django_nose')
+    TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'
+    NOSE_PLUGINS = [
+        # 'eulfedora.testutil.EulfedoraSetUp',
+        # ...
+    ]
+    # NOSE_ARGS = ['--with-eulfedorasetup']

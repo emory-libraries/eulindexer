@@ -1,4 +1,4 @@
-# file eulsolr/management/commands/__init__.py
+# file eulindexer/management/commands/__init__.py
 #
 #   Copyright 2010 Emory University General Library
 #

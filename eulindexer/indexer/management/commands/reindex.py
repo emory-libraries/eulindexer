@@ -1,5 +1,5 @@
 # file eulindexer/indexer/management/commands/reindex.py
-# 
+#
 #   Copyright 2010,2011 Emory University Libraries
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 To index or reindex a specific set of objects, use the **reindex**
 command::
 
-  $ python manage.py reindex  
+  $ python manage.py reindex
 
 The objects to be reindexed can be specified in one of the following ways:
 
@@ -38,6 +38,13 @@ The objects to be reindexed can be specified in one of the following ways:
   finding objects with any of the content models that site indexes)
   will be indexed, in that site only.
 
+* A single configured site, but at an alternate index URL:
+
+  $ python manage.py reindex -s sitename -i index_url
+
+  All objects from the configured site will be indexed, with index data
+  going into the specified index URL instead of the site-specified index.
+
 * A single fedora content model::
 
   $ python manage.py reindex  -c/--content-model info:fedora/cmodel:My-Object
@@ -52,10 +59,13 @@ Use ``python manage.py reindex -h`` for more details.
 
 
 import os, sys
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime
 from optparse import make_option
+from Queue import Queue, Empty as EmptyQueue
 from rdflib import URIRef
-from urlparse import urlparse
+import threading
+from time import sleep
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -77,25 +87,60 @@ from eulindexer.indexer.models import init_configured_indexes, \
 class Command(BaseCommand):
     """Index Fedora objects, specified by pid, against the configured site indexes."""
     help = __doc__
-    
+
     args = '<pid pid ...>'
+
+    #: default number of threads to use (override with --concurrency)
+    default_num_threads = 4
 
     option_list = BaseCommand.option_list + (
         make_option('-s', '--site', type='choice', dest='site',
                     choices=settings.INDEXER_SITE_URLS.keys(),
                     help='Index all objects that belong to a configured site [choices: ' +
                          ','.join(settings.INDEXER_SITE_URLS.keys()) + ']'),
+        make_option('-i', '--index-url',
+                    help='Override the site default solr index URL. Requires -s.'),
         make_option('-c', '--content-model', dest='cmodel',
                     help='Index all objects with the specified content model'),
+        make_option('-m', '--modified-since', dest='since',
+                    help='Index all objects modified since the specified date in YYYY-MM-DD format'),
+        make_option('--concurrency', type=int, metavar='N', default=default_num_threads,
+                    help='Number of concurrent validation/repair threads to run (default: %d)' % \
+                         default_num_threads)
     )
+
+    # class variables defined in setup
+    indexes = []
+    repo = None
+    content_models = []
+    pids = []
+    cmodels_graph = None
+
+    stats = defaultdict(int)
+
+    todo_queue = Queue()
+    done_queue = Queue()
+
+    v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
 
     def handle(self, *pids, **options):
         # verbosity should be set by django BaseCommand standard options
-        v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
+
         if 'verbosity' in options:
             verbosity = int(options['verbosity'])
         else:
-            verbosity = v_normal
+            verbosity = self.v_normal
+
+        if options.get('index_url', None) and not options.get('site', None):
+            raise CommandError('--index_url requires --site')
+
+        modified_since = None
+        if options.get('since', None):
+            try:
+                modified_since = datetime.strptime(options.get('since'), '%Y-%m-%d')
+            except:
+                raise CommandError('--modified-since %s could not be interpreted as YYYY-MM-DD date' \
+                                   % options.get('since'))
 
         # initialize repository connection - used in either mode
         self.repo = Repository()
@@ -105,23 +150,29 @@ class Command(BaseCommand):
         # check if site is set in options - indexing all objects for a single site
         if 'site' in options and options['site']:
             site = options['site']
+
+            index_url = None
+            if 'index_url' in options:
+                index_url = options['index_url']
+
             # only load the configuration for the one site we are interested in
-            if verbosity > v_normal:
+            if verbosity > self.v_normal:
                 self.stdout.write('Loading index configuration for %s' % site)
             try:
                 self.indexes = {
-                    site: SiteIndex(settings.INDEXER_SITE_URLS[site])
+                    site: SiteIndex(settings.INDEXER_SITE_URLS[site], name=site,
+                                    solr_url=index_url)
                 }
             except SiteUnavailable as err:
                 raise CommandError("Site '%s' is not available - %s" %
                                    (site, err))
-            
+
             # Query fedora risearch for all objects with any of the
             # content models this site cares about.  If a site
             # requires a combination of content models, this may
             # return extra objects, but they will be ignored at index time.
             self.content_models = self.indexes[site].distinct_content_models()
-            if verbosity >= v_normal:
+            if verbosity >= self.v_normal:
                 self.stdout.write('Querying Fedora for objects with content models:\n %s\n' % \
                                   ', '.join(self.content_models))
             self.load_pid_cmodels(content_models=self.content_models)
@@ -130,10 +181,10 @@ class Command(BaseCommand):
 
         elif 'cmodel' in options and options['cmodel']:
             cmodel_pid = options['cmodel']
-            if verbosity > v_normal:
+            if verbosity > self.v_normal:
                 self.stdout.write("Indexing objects with content model '%s'\n" % \
                                   cmodel_pid)
-            # get the content model object from fedora in order to 
+            # get the content model object from fedora in order to
             # support both uri and pid notation
             cmodel = self.repo.get_object(cmodel_pid)
             # load pids for the specified cmodel
@@ -141,27 +192,51 @@ class Command(BaseCommand):
             # set pids to be indexed based on the risearch query result
             self.pids = self.pids_from_graph()
 
-            # load configured site indexes 
+            # load configured site indexes
             self.load_indexes()
 
-        # a list of pids to index, from an unknown site 
+        # find and reindex pids modified since a specified date
+        elif modified_since:
+
+            # sparql query to find objects by modification date
+            # - includes query for content models so cmodels_graph can
+            # be populated at the same time
+            find_modified = '''SELECT ?pid ?hasmodel ?cmodel
+            WHERE {
+               ?pid <fedora-model:hasModel> <info:fedora/fedora-system:FedoraObject-3.0> .
+               ?pid <fedora-model:hasModel> ?cmodel .
+               ?pid ?hasmodel ?cmodel .
+               ?pid <fedora-view:lastModifiedDate> ?modified .
+               FILTER (?modified >= xsd:dateTime('%s'))
+               }''' % modified_since.strftime('%Y-%m-%dT%H:%M:%S')
+            graph = self.repo.risearch.find_statements(find_modified, language='sparql',
+                type='triples')
+
+            self.pids = set([str(p) for p in graph.subjects()])
+            self.cmodels_graph = graph
+            if verbosity >= self.v_normal:
+                self.stdout.write('Found %d objects modified since %s' % \
+                                  (len(self.pids), options.get('since')))
+
+            # if there is anything to index, load configured site indexes
+            if self.pids:
+                self.load_indexes()
+
+        # a list of pids to index, from an unknown site
         elif pids:
             # load configured site indexes so we can figure out which pids to index where
             self.load_indexes()
             self.pids = pids
-            if verbosity >= v_normal:
+            if verbosity >= self.v_normal:
                 self.stdout.write('Querying Fedora for object content models\n')
             self.load_pid_cmodels(pids=pids)
 
         # no site, no pids - nothing to index
-        else:	
+        else:
             raise CommandError('Neither site nor pids were specified.  Nothing to index.')
 
 
         # loop through the objects and index them
-        self.index_count = 0
-        self.err_count = 0
-
         pbar = None
         # check if progressbar is available and output is not redirected
         if ProgressBar and os.isatty(sys.stderr.fileno()):
@@ -173,65 +248,64 @@ class Command(BaseCommand):
                 total = self.total_from_graph()
             # init progress bar if we're indexing enough items to warrant it
             if total >= 5:
-                pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(), ')', Bar(),
+                pbar = ProgressBar(widgets=[Percentage(), ' (', Counter(),
+                                            '/%s)' % total, Bar(),
                                             ETA()], maxval=total).start()
 
-        i = 0
+        self.stats['total'] = 0
+        self.stats['indexed'] = 0
+        self.stats['error'] = 0
+
+        # start the requested number of worker threads
+        # NOTE: might not want multiple threads for just a few pids...
+        for i in range(options.get('concurrency', 1)):
+            v = Indexer(self.todo_queue, self.done_queue)
+            v.start()
+
+        # start a single reporter thread to pick up completed items
+        vr = Reporter(self.done_queue, options, self.stats, pbar, self.stdout)
+        vr.start()
+
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
             content_models = [str(cm) for cm in self.cmodels_graph.objects(subject=URIRef(obj.uri),
                                                                     predicate=modelns.hasModel)]
 
-            i += 1
-            if pbar:
-                pbar.update(i)
-            
             # if no content models are found, we can't do anything - report & skip to next item
             if not content_models:
                 self.stdout.write('Error: no content models found for %s - cannot index\n' % obj.pid)
                 continue
-                
-            indexed = False
+
             # loop through the configured sites to see which (if any)
             # the current object should be indexed by
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
-                    try:
-                        indexed = index.index_item(obj.pid)
-                        if verbosity > v_normal:
-                            # if site was specified as an argument, don't report it for each item
-                            if options['site']:
-                                site_detail = ''
-                            else:
-                                site_detail = '(site: %s)' % site
-                            self.stdout.write('Indexed %s %s\n' % (obj.pid, site_detail))
-                    except Exception as e:
-                        # if an error occurs on a single item, report it but keep going
-                        self.stdout.write('Error indexing %s in site %s: %s\n' % \
-                                          (obj.pid, site, e))
-                        self.err_count += 1
+                    self.todo_queue.put((index, obj.pid))
 
-            if indexed:
-                self.index_count += 1
-            else:
-                self.stdout.write('Failed to index %s - none of the configured sites index this item\n'
-                                  % obj.pid)
+        # queue.join blocks; check periodically if the need to check/sleep/interrupt
+        while not self.todo_queue.empty():
+            sleep(1)
+        self.todo_queue.join()
+
+        while not self.done_queue.empty():
+            sleep(1)
+        self.done_queue.join()
 
         end_time = datetime.now()
         if pbar:
             pbar.finish()
 
-        if verbosity >= v_normal:
+        if verbosity >= self.v_normal:
             # report # of items indexed, even if it is zero
             timediff = (end_time - start_time)
 
             self.stdout.write('Indexed %d item%s in %s\n' % \
-                              (self.index_count, '' if self.index_count == 1 else 's',
+                              (self.stats['total'], '' if self.stats['total'] == 1 else 's',
                                timediff))
             # if err count is not zero, report it also
-            if self.err_count:
-                self.stdout.write('%d errors on attempts to index\n' % self.err_count)
+            if self.stats['error']:
+                self.stdout.write('%(error)d errors on attempts to index\n' % self.stats)
 
     def load_indexes(self):
         # load configured site indexes so we can figure out which pids to index where
@@ -263,18 +337,22 @@ class Command(BaseCommand):
         if pids is not None:
             objs = [self.repo.get_object(pid) for pid in pids]
             query_filter =  ' || '.join('?pid = <%s>' % o.uri for o in objs)
-            
+
         elif content_models is not None:
-            query_filter =  ' || '.join('?cmodel = <%s>' % cm for cm in content_models)
-        
+            # NOTE: need to filter on a different cmodel variable than the one
+            # being returned because *all* cmodels are needed in order to
+            # correctly identify which indexes support which objects
+            query_filter =  ' || '.join('?cm1 = <%s>' % cm for cm in content_models)
+
         query = '''CONSTRUCT   { ?pid <%(has_model)s> ?cmodel }
         WHERE {
-           ?pid <%(has_model)s> ?cmodel
+           ?pid <%(has_model)s> ?cmodel .
+           ?pid <%(has_model)s> ?cm1
            FILTER ( %(filter)s )
         }
         ''' % {
            'has_model': modelns.hasModel,
-     	   'filter': query_filter
+            'filter': query_filter
         }
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
@@ -287,7 +365,7 @@ class Command(BaseCommand):
         content model information for objects with any of the content
         models that a particular site indexes.'''
         for subj in self.cmodels_graph.subjects(predicate=modelns.hasModel):
-            # convert from URIRef to string 
+            # convert from URIRef to string
             yield str(subj)
 
 
@@ -300,5 +378,80 @@ class Command(BaseCommand):
         return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
 
 
+class Indexer(threading.Thread):
+    '''Thread class for indexing items in a queue.'''
+    daemon = True
 
-        
+    def __init__(self, todo_queue, done_queue):
+        threading.Thread.__init__(self)
+        self.todo = todo_queue
+        self.done = done_queue
+
+    def run(self):
+        while True:
+            try:
+                item = self.todo.get()
+                # item should be a tuple of site index and pid
+                site_index, pid = item
+                try:
+                    indexed = site_index.index_item(pid)
+                    err = None
+                except Exception as err:
+                    indexed = False
+
+                # stick in done queue a tuple of site index, pid,
+                # index success or failure, and error if any
+                self.done.put((site_index, pid, indexed, err))
+
+                self.todo.task_done()
+            except EmptyQueue:
+                sleep(1)
+
+class Reporter(threading.Thread):
+    '''Thread class with common logic for handling items in the
+    ``done`` queue and reporting where appropriate.'''
+
+    daemon = True
+
+    def __init__(self, done_queue, options, stats, pbar=None, stdout=None):
+        threading.Thread.__init__(self)
+        self.done = done_queue
+        self.options = options
+        self.pbar = pbar
+        self.stats = stats
+        self.stdout = stdout
+
+        # keep track of total unique pids indexed (even if indexed in multiple sites)
+        self.pids = set()
+
+    def run(self):
+        while True:
+            try:
+                site_index, pid, indexed, err = self.done.get()
+                self.pids.add(pid)
+                # successfully indexed
+                if indexed:
+                    self.stats['indexed'] += 1
+                    if int(self.options.get('verbosity', Command.v_normal)) > Command.v_normal:
+                        # if site was specified as an argument, don't report it for each item
+                        if self.options['site']:
+                            site_detail = ''
+                        else:
+                            site_detail = '(site: %s)' % site_index.name
+                        self.stdout.write('Indexed %s %s\n' % (pid, site_detail))
+
+                # error indexing
+                else:
+                    # NOTE: pid could be redundant, but better to include in case not
+                    self.stdout.write('Index error in site %s for %s: %s\n' % \
+                                      (site_index.name, pid, err))
+                    self.stats['error'] += 1
+
+                self.stats['total'] = len(self.pids)
+                if self.pbar:
+                    self.pbar.update(self.stats['total'])
+
+                self.done.task_done()
+
+            except EmptyQueue:
+                sleep(1)

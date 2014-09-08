@@ -1,5 +1,5 @@
 # file eulindexer/indexer/tests.py
-# 
+#
 #   Copyright 2010,2011 Emory University Libraries
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,19 +15,20 @@
 #   limitations under the License.
 
 from cStringIO import StringIO
-from datetime import timedelta
-import httplib2
+from datetime import datetime, timedelta
 from mock import Mock, patch, DEFAULT
-from os import path
+import os
+import requests
+from requests.auth import HTTPBasicAuth
 from socket import error as socket_error
-from stompest.simple import Stomp
+from stompest.sync import Stomp
 from stompest.error import StompFrameError
-from sunburnt import SolrError, sunburnt
-import urllib2
+from sunburnt import SolrError
 
 from django.conf import settings
 from django.core.management.base import CommandError
-from django.test import Client, TestCase
+from django.test import TestCase
+from django.test.utils import override_settings
 
 from eulfedora.server import Repository
 
@@ -36,39 +37,18 @@ from eulindexer.indexer.management.commands.indexer import QueueItem
 from eulindexer.indexer.models import SiteIndex, IndexError, \
 	init_configured_indexes, IndexDataReadError, SiteUnavailable
 
-from django.utils import simplejson
-from datetime import datetime, timedelta
 
-
+@override_settings(INDEXER_STOMP_SERVER='localhost',
+	INDEXER_STOMP_PORT='61613',
+	INDEXER_STOMP_CHANNEL='/topic/foo')
 class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
     # test the indexer command and its methods here
 
-    # django settings we will save for overriding and restoring
-    config_settings = ['INDEXER_SITE_URLS', 'INDEXER_STOMP_SERVER', 'INDEXER_STOMP_PORT',
-                       'INDEXER_STOMP_CHANNEL']
-
     def setUp(self):
-        # store configurations tests may modify or add
-        for cfg in self.config_settings:
-            setattr(self, '_%s' % cfg, getattr(settings, cfg, None))
-
-        # set values that the tests expect to be present
-        settings.INDEXER_STOMP_SERVER = 'localhost'
-        settings.INDEXER_STOMP_PORT = '61613'
-        settings.INDEXER_STOMP_CHANNEL = '/topic/foo'
-        
         self.command = indexer.Command()
 
     def tearDown(self):
-        # restore settings
-        for cfg in self.config_settings:
-            original_value = getattr(self, '_%s' % cfg)
-            if original_value is None:
-                delattr(settings, cfg)
-            else:
-                setattr(settings, cfg, original_value)
-
         IndexError.objects.all().delete()
 
     def test_startup_error(self):
@@ -84,14 +64,14 @@ class IndexerTest(TestCase):
         # configure fewer retries/wait period to make tests faster
         self.command.max_reconnect_retries = 3
         self.command.retry_reconnect_wait = 1
-        
+
         mocklistener = Mock(Stomp)
         # raise an error every time - no reconnection
         mocklistener.connect.side_effect = socket_error
         # simulate what happens when fedora becomes unavailable
         mocklistener.canRead.return_value = True
         mocklistener.receiveFrame.side_effect = StompFrameError
-        
+
         with patch('eulindexer.indexer.management.commands.indexer.Stomp',
                    new=Mock(return_value=mocklistener)):
             self.assertRaises(CommandError, self.command.reconnect_listener)
@@ -182,7 +162,7 @@ class IndexerTest(TestCase):
         self.command.indexes[site].index_item.return_value = True
         self.command.indexes[site2].index_item.return_value = False
         self.command.process_queue()
-        # index_item should be called on both sites 
+        # index_item should be called on both sites
         self.command.indexes[site].index_item.assert_called()
         self.command.indexes[site2].index_item.assert_called()
 
@@ -202,10 +182,10 @@ class IndexerTest(TestCase):
         self.command.indexes[site2].index_item.return_value = True
         # process the queue again
         self.command.process_queue()
-        # index_item should be called on both sites 
+        # index_item should be called on both sites
         self.command.indexes[site].index_item.assert_not_called()
         self.command.indexes[site2].index_item.assert_called()
-        
+
         self.assertEqual({}, self.command.to_index,
                          'to_index queue should be empty when items are indexed in all sites')
 
@@ -338,44 +318,23 @@ class IndexerTest(TestCase):
                          'reconnect should be called based on idle-reconnect & last activity')
                     self.assertEqual(1, self.command.listener.disconnect.call_count,
                          'listener.disconnect should be called based on idle-reconnect & last activity')
-        
 
+
+@override_settings(DEV_ENV=False, FEDORA_USER=None, FEDORA_PASSWORD=None)
 class SiteIndexTest(TestCase):
     '''Tests for the SiteIndex object, which wraps the index
     configuration and indexing logic for a single site.'''
-    
-    # Mock urllib calls to return an empty JSON response
-    mockurllib = Mock(urllib2)
-    mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
 
-    settings_keys = ['DEV_ENV', 'FEDORA_USER', 'FEDORA_PASSWORD']
-    _settings = {}
-
-    def setUp(self):
-        for key in self.settings_keys:
-            self._settings[key] = getattr(settings, key, None),
-
-        settings.DEV_ENV = False
-        settings.FEDORA_USER = None
-        settings.FEDORA_PASSWORD = None
-
-    def tearDown(self):
-        for key, val in self._settings.iteritems():
-            if val is None:
-                delattr(settings, key)
-            else:
-                setattr(settings, key, val)
-
-    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_init(self, mocksunburnt, mockurllib):
+    def test_init(self, mocksunburnt, mockrequests):
         # Test init & load configuration
         site_url = 'http://localhost:0001'
         mocksunburnt.SolrInterface.return_value = 'solr interface'
 
         # could also simulate urrlib and sunburnt connection errors
         # to test error handling
-        
+
         # set sample fields and values to be returned from mock url call
         index_config = {
             'SOLR_URL': "http://localhost:8983/",
@@ -384,12 +343,13 @@ class SiteIndexTest(TestCase):
                 ['info:fedora/emory-control:EuterpeAudio-1.0']
             ]
         }
-        mockopener = mockurllib.build_opener.return_value
-        mockopener.open.return_value.read.return_value = simplejson.dumps(index_config)
-        index = SiteIndex(site_url)
+        mockrequests.codes.ok = 200
+        mockrequests.Session.return_value.get.return_value.status_code = 200
+        mockrequests.Session.return_value.get.return_value.json.return_value = index_config
+        index = SiteIndex(site_url, 'test-site')
         self.assertEqual(site_url, index.site_url)
-        # now initialized with 
-        mockopener.open.assert_called_with(site_url)
+        # now initialized with
+        mockrequests.Session.return_value.get.assert_called_with(site_url)
         self.assertEqual(index_config['SOLR_URL'], index.solr_url,
                          'SiteIndex solr url should be configured based on data returned from url call')
         for cmodel_group in index_config['CONTENT_MODELS']:
@@ -401,45 +361,49 @@ class SiteIndexTest(TestCase):
         solr_args, solr_kwargs = mocksunburnt.SolrInterface.call_args
         self.assertEqual(index_config['SOLR_URL'], solr_args[0],
             'solr connection should be initialized via solr url from index configuration')
-        self.assert_(isinstance(solr_kwargs['http_connection'], httplib2.Http))
+        print 'http conn = ', solr_kwargs['http_connection']
+        self.assertEqual(solr_kwargs['http_connection'], mockrequests.Session.return_value)
+        # self.assert_(isinstance(solr_kwargs['http_connection'], requests.Session))
         self.assertEqual('solr interface', index.solr_interface)
 
-
-    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    @patch.object(settings, 'DEV_ENV', new=False)
-    def test_request_headers(self, mocksunburnt):
+    def test_request_headers(self, mocksunburnt, mockrequests):
         # non-ssl indexdata url
-        index = SiteIndex('http://site.url')
-        self.mockurllib.build_opener.assert_called()
-        headers =  dict(index.opener.addheaders)
-        self.assert_('User-Agent' in headers)
-        self.assert_(headers['User-Agent'].startswith('EULindexer/'))
+        mockrequests.codes.ok = 200
+        mocksession = mockrequests.Session.return_value
+        mocksession.get.return_value.status_code = 200
+        mocksession.get.return_value.json.return_value = {}
+        mocksession.headers = {}
+        mocksession.auth = None
+        index = SiteIndex('http://site.url', 'test-site')
+
+        self.assert_('User-Agent' in mocksession.headers)
+        self.assert_(mocksession.headers['User-Agent'].startswith('EULindexer/'))
         # auth should not be set in non-ssl
-        self.assert_('AUTHORIZATION' not in headers)
+        self.assertEqual(None, mocksession.auth)
 
         # ssl with no credentials - no basic auth
         with patch.object(settings, 'FEDORA_USER', new=None):
             with patch.object(settings, 'FEDORA_PASSWORD', new=None):
-                
-                index = SiteIndex('https://site.url')
-                headers =  dict(index.opener.addheaders)
-                self.assert_('AUTHORIZATION' not in headers)
+
+                index = SiteIndex('https://site.url', 'test-site')
+                self.assertEqual(None, mocksession.auth)
 
         # ssl with credentials - basic auth should be set
         with patch.object(settings, 'FEDORA_USER', new='user'):
             with patch.object(settings, 'FEDORA_PASSWORD', new='pass'):
-                
-                index = SiteIndex('https://site.url')
-                headers =  dict(index.opener.addheaders)
-                self.assert_('AUTHORIZATION' in headers)
-                self.assert_(headers['AUTHORIZATION'].startswith('Basic '))
-                
 
-    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+                index = SiteIndex('https://site.url', 'test-site')
+                self.assert_(isinstance(mocksession.auth, HTTPBasicAuth))
+
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_indexes_item(self, mocksunburnt):
-        index = SiteIndex('test-site-url')
+    def test_indexes_item(self, mocksunburnt, mockrequests):
+        mockrequests.codes.ok = 200
+        mockrequests.Session.return_value.get.return_value.status_code = 200
+        mockrequests.Session.return_value.get.return_value.json.return_value = {}
+        index = SiteIndex('test-site-url', 'test-site')
         # define some content models and sets of cmodels for testing
         cmodels = {
             'item': 'info:fedora/test:item',
@@ -468,49 +432,46 @@ class SiteIndexTest(TestCase):
         # superset - all required cmodels, plus others
         self.assertTrue(index.indexes_item([cmodels['item'], cmodels['item-plus'], cmodels['other']]))
 
-
-    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_index_item(self, mocksunburnt, mockurllib):
+    def test_index_item(self, mocksunburnt, mockrequests):
         # return empty json data for index init/load config
-        mockopener = mockurllib.build_opener.return_value
-        mockopener.open.return_value.read.return_value = '{}'
-        index = SiteIndex('test-site-url')
+        mockrequests.codes.ok = 200
+        mocksession = mockrequests.Session.return_value
+        mocksession.get.return_value.status_code = 200
+        mocksession.get.return_value.json.return_value = {}
+        index = SiteIndex('test-site-url', 'test-site')
         testpid = 'test:abc1'
         # replace solr interface with a mock we can inspect
         index.solr_interface = Mock()
 
         index_data = {'foo': 'bar', 'baz': 'qux'}
-        mockresponse = Mock()
-        mockresponse.read.return_value = simplejson.dumps(index_data)
-        mockresponse.code = 2000
-        mockopener.open.return_value = mockresponse
+        mockresponse = mocksession.get.return_value
+        mockresponse.json.return_value = index_data
+        mockresponse.status_code = 200
 
         indexed = index.index_item(testpid)
         # solr 'add' should be called with data returned via index data webservice
         index.solr_interface.add.assert_called_with(index_data)
         self.assertTrue(indexed, 'index_item should return True on success')
-        
+
         # solr error on attempt to add should be re-raised
         index.solr_interface.add.side_effect = SolrError
         self.assertRaises(SolrError, index.index_item, testpid)
 
-        # json parse error should also raise an exception
-        mockopener.open.return_value.read.return_value = 'bogus data that is non-json-parsable '
-        self.assertRaises(Exception, index.index_item, testpid)
-        
-        mockopener.open.side_effect = Exception
+        mocksession.get.side_effect = Exception
         # error on attempt to read index data should be raised as a recoverable error
         self.assertRaises(IndexDataReadError, index.index_item, testpid)
 
-
-    @patch('eulindexer.indexer.models.urllib2')
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_delete_item(self, mocksunburnt, mockurllib):
+    def test_delete_item(self, mocksunburnt, mockrequests):
         # return empty json data for index init/load config
-        mockopener = mockurllib.build_opener.return_value
-        mockopener.open.return_value.read.return_value = '{}'
-        index = SiteIndex('test-site-url')
+        mocksession = mockrequests.Session.return_value
+        mocksession.get.return_value.status_code = 200
+        mockrequests.codes.ok = 200
+        mocksession.get.return_value.json.return_value = {}
+        index = SiteIndex('test-site-url', 'site name')
         index.solr_interface = Mock()
         keyfield = 'Pid'
         index.solr_interface.schema.unique_field.name = keyfield
@@ -519,10 +480,16 @@ class SiteIndexTest(TestCase):
         index.solr_interface.delete.assert_called_with({keyfield: testpid})
 
 
-    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_distinct_cmodels(self, mocksunburnt):
-        index = SiteIndex('http://foo/index')
+    def test_distinct_cmodels(self, mocksunburnt, mockrequests):
+        # set empty response
+        mockrequests.codes.ok = 200
+        mocksession = mockrequests.Session.return_value
+        mocksession.get.return_value.status_code = 200
+        mocksession.get.return_value.json.return_value = {}
+
+        index = SiteIndex('http://foo/index', 'foo')
         cmodels = {
             'coll': 'info:fedora/emory-control:Collection-1.1',
             'audio': 'info:fedora/emory-control:EuterpeAudio-1.0',
@@ -543,25 +510,23 @@ class SiteIndexTest(TestCase):
         self.assert_(cmodels['item'] in distinct_cmodels)
         self.assertEqual(len(cmodels.keys()), len(distinct_cmodels))
 
-
+@override_settings(INDEXER_SITE_URLS={
+    'site1': 'http://localhost:0001',
+    'site2': 'http://localhost:0002',
+    'site3': 'http://localhost:0003'})
 class TestInitConfiguredIndexes(TestCase):
 
+    _http_proxy = None
+
     def setUp(self):
-        # store real configuration for sites to be indexed
-        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
-        # define sites for testing
-        settings.INDEXER_SITE_URLS = {
-            'site1': 'http://localhost:0001', 
-            'site2': 'http://localhost:0002', 
-            'site3': 'http://localhost:0003'
-        }
+        # proxy causes issues with connection error in some cases, so unset
+        if 'HTTP_PROXY' in os.environ:
+            self._http_proxy = os.environ.get('HTTP_PROXY')
+            del os.environ['HTTP_PROXY']
 
     def tearDown(self):
-        # restore index site configuration
-        if self._INDEXER_SITE_URLS is None:
-            delattr(settings, 'INDEXER_SITE_URLS')
-        else:
-            settings.INDEXER_SITE_URLS = self._INDEXER_SITE_URLS
+        if self._http_proxy is not None:
+            os.environ['HTTP_PROXY'] = self._http_proxy
 
     def test_connection_error(self):
         # Try to connect to an unavailable server. Not ideal handling
@@ -573,19 +538,19 @@ class TestInitConfiguredIndexes(TestCase):
         self.assert_(isinstance(errors['site2'], SiteUnavailable))
         self.assert_(isinstance(errors['site3'], SiteUnavailable))
 
-    # Mock urllib calls to return an empty JSON response
-    mockurllib = Mock(urllib2)
-    mockurllib.build_opener.return_value.open.return_value.read.return_value = '{}'
-
-    @patch('eulindexer.indexer.models.urllib2', new=mockurllib)
+    @patch('eulindexer.indexer.models.requests')
     @patch('eulindexer.indexer.models.sunburnt')
-    def test_init(self, mocksunburnt):
+    def test_init(self, mocksunburnt, mockrequests):
+        mockrequests.codes.ok = 200
+        mockrequests.Session.return_value.get.return_value.status_code = 200
+        mockrequests.Session.return_value.get.return_value.json.return_value = {}
+
        # Verify index settings are loaded
         indexes, errors = init_configured_indexes()
         self.assertEqual(len(settings.INDEXER_SITE_URLS.keys()),
                          len(indexes.keys()),
                          'init_configured_index should initialize one index per configured site')
-        
+
         # check that site urls match - actual index configuration
         # loading is handled in index settings object
         self.assertEqual(indexes['site1'].site_url,
@@ -597,25 +562,14 @@ class TestInitConfiguredIndexes(TestCase):
 
         # solr initialization, etc. is handled by SiteIndex class & tested there
 
+
+@override_settings(INDEXER_SITE_URLS={'s1': 'http://ess.one', 's2': 'http://ess.two'})
 class ReindexTest(TestCase):
     '''Unit tests for the reindex manage command.'''
 
     def setUp(self):
-        self._INDEXER_SITE_URLS = getattr(settings, 'INDEXER_SITE_URLS', None)
-        # set some test site configs before initializing command
-        settings.INDEXER_SITE_URLS = {
-            's1': 'http://ess.one',
-            's2': 'http://ess.two',
-        }
         self.command = reindex.Command()
         self.command.stdout = StringIO()
-
-
-    def tearDown(self):
-        if self._INDEXER_SITE_URLS is not None:
-            setattr(settings, 'INDEXER_SITE_URLS', self._INDEXER_SITE_URLS)
-        else:
-            delattr(settings, 'INDEXER_SITE_URLS')
 
     def test_load_pid_cmodels(self):
         pids = ['pid:1', 'pid:2', 'pid:3']
@@ -646,7 +600,7 @@ class ReindexTest(TestCase):
         # get the query arg to do a little inspection
         args, kwargs = self.command.repo.risearch.find_statements.call_args
         query = args[0]
-        # sparql query should filter on all of the content models specified 
+        # sparql query should filter on all of the content models specified
         for cm in content_models:
             self.assert_(cm in query,
                          'content model %s should be included in risearch cmodel query' % cm)
@@ -676,44 +630,45 @@ class ReindexTest(TestCase):
             's1': indexconfig1,
             's2': indexconfig2
         }
-        
+
         # patch init_configured_indexes to return our mock site indexes
         with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
                    new=Mock(return_value=(indexes, {}))):
-            # set mock indexes not to index any items 
+            # set mock indexes not to index any items
             indexes['s1'].indexes_item.return_value = False
             indexes['s2'].indexes_item.return_value = False
             self.command.handle(*pids)
             # nothing indexed, but no errors
-            self.assertEqual(0, self.command.index_count)
-            self.assertEqual(0, self.command.err_count)
-            
+            self.assertEqual(0, self.command.stats['indexed'])
+            self.assertEqual(0, self.command.stats['error'])
+
             # set mock index to index all items successfully
             indexes['s1'].indexes_item.return_value = True
             indexes['s1'].index_item.return_value = True
+
             self.command.handle(*pids)
             # index count = all items, no errors
-            self.assertEqual(len(pids), self.command.index_count)
-            self.assertEqual(0, self.command.err_count)
+            self.assertEqual(len(pids), self.command.stats['indexed'])
+            self.assertEqual(0, self.command.stats['error'])
 
             # index all items but fail
             indexes['s1'].index_item.return_value = False
             self.command.handle(*pids)
             # nothing indexed, no items
-            self.assertEqual(0, self.command.index_count)
-            self.assertEqual(0, self.command.err_count)
+            self.assertEqual(0, self.command.stats['indexed'])
+            self.assertEqual(len(pids), self.command.stats['error'])
 
             # error on attempt to index
             indexes['s1'].index_item.side_effect = Exception
             self.command.handle(*pids)
             # nothing indexed, all errored
-            self.assertEqual(0, self.command.index_count)
-            self.assertEqual(len(pids), self.command.err_count)
+            self.assertEqual(0, self.command.stats['indexed'])
+            self.assertEqual(len(pids), self.command.stats['error'])
 
     @patch('eulindexer.indexer.management.commands.reindex.Repository')
     def test_index_by_site(self, mockrepo):
         # test the basic indexing logic of the script - index a configured site
-        
+
         # cmodel graph is initialized by load_pid_cmodels and needs to
         # return an iterable when queried
         def set_cmodel_graph(*args, **kwargs):
@@ -733,13 +688,13 @@ class ReindexTest(TestCase):
         mocksiteindex.indexes_item.return_value = True
         # indexes everything successfully
         mocksiteindex.index_item.return_value = True
-        
+
         with patch('eulindexer.indexer.management.commands.reindex.SiteIndex',
                    Mock(return_value=mocksiteindex)):
             self.command.handle(site='s1')
             # all pids indexed, no errors
-            self.assertEqual(len(testpids), self.command.index_count)
-            self.assertEqual(0, self.command.err_count)
+            self.assertEqual(len(testpids), self.command.stats['indexed'])
+            self.assertEqual(0, self.command.stats['error'])
             self.assertEqual(1, len(self.command.indexes.keys()),
                              'only the required site configuration is loaded when indexing a single site')
             self.assert_('s1' in self.command.indexes)
@@ -763,7 +718,7 @@ class ReindexTest(TestCase):
             's1': indexconfig1,
             's2': indexconfig2
         }
-        
+
         # patch init_configured_indexes to return our mock site indexes
         with patch('eulindexer.indexer.management.commands.reindex.init_configured_indexes',
                    new=Mock(return_value=(indexes, {}))):
@@ -775,7 +730,7 @@ class ReindexTest(TestCase):
             self.command.handle(cmodel='my:stuff-1.0')
             mock_load_pids = self.command.load_pid_cmodels
             mock_load_pids.assert_called_with(content_models=['info:fedora/my:stuff-1.0'])
-            
+
             # specify cmodel as uri
             self.command.handle(cmodel='info:fedora/my:stuff-1.0')
             mock_load_pids = self.command.load_pid_cmodels
