@@ -23,6 +23,7 @@ from django.conf import settings
 from django.db import models
 import requests
 from requests.auth import HTTPBasicAuth
+from requests.packages.urllib3.exceptions import ProtocolError
 from sunburnt import sunburnt, SolrError
 import time
 from urlparse import urlparse
@@ -136,7 +137,7 @@ class SiteIndex(object):
             try:
                 self.solr_interface = sunburnt.SolrInterface(self.solr_url,
                                                              http_connection=session)
-            except socket.error as err:
+            except ProtocolError as err:
                 logger.error('Unable to initialize SOLR connection at (%s) for application url %s',
                              self.solr_url, self.site_url)
                 raise SolrUnavailable(err)
@@ -195,7 +196,7 @@ class SiteIndex(object):
         :class:`RecoverableIndexError`.
 
         :param pid - the pid of the object to index; expected to be a
-	        key in in the current :attr:`to_index` queue.
+            key in in the current :attr:`to_index` queue.
         :returns: True when indexing completes successfully
         '''
         indexdata_url = '%s/%s/' % (self.site_url.rstrip('/'), pid)
@@ -241,7 +242,7 @@ class SiteIndex(object):
             logger.error('Error updating %s index for %s: %s', self.name, pid, err_detail)
             raise SolrError(err_detail)
 
-	    # possible errors: status 404 - solr not running/path incorrectly configured
+        # possible errors: status 404 - solr not running/path incorrectly configured
         # schema error prints nicely, 404 is ugly...
 
         # Return that item was successfully indexed
