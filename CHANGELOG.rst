@@ -2,6 +2,11 @@
 Change Log
 ==========
 
+Release 0.5.1
+-------------
+
+* Fix Fedora connection error handling and reconnects.
+
 Release 0.5.0
 -------------
 
