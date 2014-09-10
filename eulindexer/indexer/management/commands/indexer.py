@@ -52,7 +52,7 @@ import signal
 from socket import error as socketerror
 from stompest.config import StompConfig
 from stompest.sync.client import Stomp
-from stompest.error import StompFrameError
+from stompest.error import StompFrameError, StompConnectTimeout
 from sunburnt import SolrError
 from time import sleep
 
@@ -175,7 +175,7 @@ class Command(BaseCommand):
         self.repo = Repository()
         try:
             self.init_listener()
-        except socketerror:
+        except StompConnectTimeout:
             # if we can't connect on start-up, bail out
             raise CommandError('Error connecting to %s:%s ' % (self.stomp_server, self.stomp_port) +
                                '- check that Fedora is running and that messaging is enabled ' +
@@ -279,7 +279,7 @@ class Command(BaseCommand):
 
             # if fedora is still not available, attempting to
             # listen will generate a socket error
-            except socketerror:
+            except StompConnectTimeout:
                 try_detail = ''
                 if self.max_reconnect_retries != -1:
                     try_detail = 'of %d ' % self.max_reconnect_retries
