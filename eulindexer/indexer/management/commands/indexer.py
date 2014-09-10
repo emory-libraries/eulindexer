@@ -49,10 +49,10 @@ from datetime import datetime, timedelta
 import logging
 from optparse import make_option
 import signal
-from socket import error as socketerror
 from stompest.config import StompConfig
 from stompest.sync.client import Stomp
-from stompest.error import StompFrameError, StompConnectTimeout
+from stompest.error import StompFrameError, StompConnectTimeout, \
+    StompConnectionError, StompError
 from sunburnt import SolrError
 from time import sleep
 
@@ -211,6 +211,13 @@ class Command(BaseCommand):
                 # any recently updated objects
                 try:
                     data_available = self.listener.canRead(timeout=self.index_delay)
+
+                except StompConnectionError as err:
+                    # probably indicates fedora has gone down
+                    logger.error('Received Stomp Connection error "%s"',  err)
+                    self.reconnect_listener()
+                    data_available = False
+
                 except Exception as err:
                     # signals like SIGINT/SIGHUP get propagated to the socket
                     if self.interrupted:
@@ -279,7 +286,9 @@ class Command(BaseCommand):
 
             # if fedora is still not available, attempting to
             # listen will generate a socket error
-            except StompConnectTimeout:
+            except StompError:
+                # could be StompConnectTimeout, StompConnectionError, etc.
+
                 try_detail = ''
                 if self.max_reconnect_retries != -1:
                     try_detail = 'of %d ' % self.max_reconnect_retries
