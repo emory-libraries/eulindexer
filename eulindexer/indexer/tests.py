@@ -20,9 +20,8 @@ from mock import Mock, patch, DEFAULT
 import os
 import requests
 from requests.auth import HTTPBasicAuth
-from socket import error as socket_error
 from stompest.sync import Stomp
-from stompest.error import StompFrameError
+from stompest.error import StompFrameError, StompConnectTimeout
 from sunburnt import SolrError
 
 from django.conf import settings
@@ -35,12 +34,12 @@ from eulfedora.server import Repository
 from eulindexer.indexer.management.commands import indexer, reindex
 from eulindexer.indexer.management.commands.indexer import QueueItem
 from eulindexer.indexer.models import SiteIndex, IndexError, \
-	init_configured_indexes, IndexDataReadError, SiteUnavailable
+    init_configured_indexes, IndexDataReadError, SiteUnavailable
 
 
 @override_settings(INDEXER_STOMP_SERVER='localhost',
-	INDEXER_STOMP_PORT='61613',
-	INDEXER_STOMP_CHANNEL='/topic/foo')
+    INDEXER_STOMP_PORT='61613',
+    INDEXER_STOMP_CHANNEL='/topic/foo')
 class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
     # test the indexer command and its methods here
@@ -55,7 +54,7 @@ class IndexerTest(TestCase):
         # simulate a socket error (fedora not running/configured properly)
         # on first startup - should raise a command error
         mockstomp = Mock(Stomp)
-        mockstomp.side_effect = socket_error
+        mockstomp.side_effect = StompConnectTimeout
         with patch('eulindexer.indexer.management.commands.indexer.Stomp',
                    new=mockstomp):
             self.assertRaises(CommandError, self.command.handle, verbosity=0)
@@ -67,7 +66,7 @@ class IndexerTest(TestCase):
 
         mocklistener = Mock(Stomp)
         # raise an error every time - no reconnection
-        mocklistener.connect.side_effect = socket_error
+        mocklistener.connect.side_effect = StompConnectTimeout
         # simulate what happens when fedora becomes unavailable
         mocklistener.canRead.return_value = True
         mocklistener.receiveFrame.side_effect = StompFrameError
@@ -84,7 +83,7 @@ class IndexerTest(TestCase):
         def err_then_connect(*args, **kwargs):
             if not mocklistener.raised_error:
                 mocklistener.raised_error = True
-                raise socket_error
+                raise StompConnectTimeout
             else:
                 return DEFAULT
         mocklistener.connect.side_effect = err_then_connect
