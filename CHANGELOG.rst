@@ -3,6 +3,11 @@
 Change Log
 ==========
 
+Release 0.6
+-----------
+
+* New convenience script to clear a configured solr index
+
 Release 0.5.1
 -------------
 
