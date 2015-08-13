@@ -1,6 +1,5 @@
 django<1.7
-#eulfedora
--e git://github.com/emory-libraries/eulfedora.git@feature/fedora3.8-compatibility#egg=eulfedora
+eulfedora<=1.1
 #sunburnt
 # (MAYBE) 05/2014 need local version of sunburnt for Solr 4 join query support
 # NOTE: also want new enough dev version for python-requests support
