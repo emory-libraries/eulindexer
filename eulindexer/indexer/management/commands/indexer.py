@@ -177,9 +177,9 @@ class Command(BaseCommand):
             self.init_listener()
         except StompConnectTimeout:
             # if we can't connect on start-up, bail out
-            raise CommandError('Error connecting to %s:%s ' % (self.stomp_server, self.stomp_port) +
-                               '- check that Fedora is running and that messaging is enabled ' +
-                               'and  configured correctly')
+            raise CommandError('Error connecting to %s:%s' % (self.stomp_server, self.stomp_port) +
+                               '\nCheck that Fedora is running and that messaging is enabled ' +
+                               'and configured correctly')
 
         # load site index configurations
         self.init_indexes()

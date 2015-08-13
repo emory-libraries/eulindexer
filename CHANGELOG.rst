@@ -1,6 +1,15 @@
 .. _CHANGELOG:
+
 Change Log
 ==========
+
+Release 0.6
+-----------
+
+* New convenience script **clear_index*to clear the Solr index for a
+  configured site.
+* Update to require eulfedora 1.1 or greater for Fedora 3.8 support.
+* Update to require a recent version of python-requests.
 
 Release 0.5.1
 -------------
@@ -71,11 +80,13 @@ Release 0.2
   to support connecting to SSL Solr instances with certificates that
   :mod:`httplib2` does not recognize.
 * Signal handlers for SIGINT and SIGHUP in the ``indexer`` script:
+
   * on SIGINT, ``indexer`` will attempt to stop gracefully (index any
     currently items queued for indexing, but not listen for any new
     items).
   * on SIGHUP, ``indexer`` will reload the configured site index
     configurations and re-initialize Solr connections.
+
 * Support indexing a single item by multiple sites.
 * Improved sample apache configuration and fabric deploy file.
 
