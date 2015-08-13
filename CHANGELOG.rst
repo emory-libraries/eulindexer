@@ -6,7 +6,10 @@ Change Log
 Release 0.6
 -----------
 
-* New convenience script to clear a configured solr index
+* New convenience script **clear_index*to clear the Solr index for a
+  configured site.
+* Update to require eulfedora 1.1 or greater for Fedora 3.8 support.
+* Update to require a recent version of python-requests.
 
 Release 0.5.1
 -------------
