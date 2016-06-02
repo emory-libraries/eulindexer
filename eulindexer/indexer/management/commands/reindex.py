@@ -336,13 +336,13 @@ class Command(BaseCommand):
         '''
         if pids is not None:
             objs = [self.repo.get_object(pid) for pid in pids]
-            query_filter =  ' || '.join('?pid = <%s>' % o.uri for o in objs)
+            query_filter = ' || '.join('?pid = <%s>' % o.uri for o in objs)
 
         elif content_models is not None:
             # NOTE: need to filter on a different cmodel variable than the one
             # being returned because *all* cmodels are needed in order to
             # correctly identify which indexes support which objects
-            query_filter =  ' || '.join('?cm1 = <%s>' % cm for cm in content_models)
+            query_filter = ' || '.join('?cm1 = <%s>' % cm for cm in content_models)
 
         query = '''CONSTRUCT   { ?pid <%(has_model)s> ?cmodel }
         WHERE {
@@ -352,7 +352,7 @@ class Command(BaseCommand):
         }
         ''' % {
            'has_model': modelns.hasModel,
-            'filter': query_filter
+           'filter': query_filter
         }
         self.cmodels_graph = self.repo.risearch.find_statements(query, language='sparql',
                                                          type='triples', flush=True)
@@ -375,7 +375,7 @@ class Command(BaseCommand):
         site or by content model).
         '''
         # FIXME: more efficient way to do this?
-        return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
+        return len(set(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
 
 
 class Indexer(threading.Thread):
