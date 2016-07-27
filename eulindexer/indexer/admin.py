@@ -24,6 +24,7 @@ class IndexErrorAdminForm(forms.ModelForm):
     # custom admin form to specify textarea widget for detail field
     class Meta:
         model = IndexError
+        fields = '__all__'
         widgets = {
             'detail': forms.Textarea(attrs={'cols': 90, 'rows': 10}),
         }
