@@ -8,3 +8,7 @@ eulfedora>=1.6
 # sunburnt requires *either* httplib2 or python-requests
 stompest>=2.1.4
 requests>=2.7.0
+
+# ssl cert handling
+httplib2.ca-certs-locater
+ndg-httpsclient
