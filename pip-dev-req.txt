@@ -4,4 +4,4 @@ coverage
 sphinx
 fabric
 pyPdf
-django-nose
+django-nose==1.2.1

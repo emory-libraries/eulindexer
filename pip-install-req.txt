@@ -10,5 +10,6 @@ stompest>=2.1.4
 requests>=2.7.0
 
 # ssl cert handling
+pyOpenSSL
 httplib2.ca-certs-locater
 ndg-httpsclient
