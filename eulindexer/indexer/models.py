@@ -208,6 +208,7 @@ class SiteIndex(object):
             response = self.session.get(indexdata_url)
             if response.status_code == requests.codes.ok:
                 index_data = response.json()
+
             else:
                 raise IndexDataReadError('Failed to load index data for %s from %s (%s)' %
                                      (pid, indexdata_url, response.status_code))

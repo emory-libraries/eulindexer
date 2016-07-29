@@ -3,6 +3,13 @@
 Change Log
 ==========
 
+Release 0.7
+-----------
+
+* Update Django to 1.8
+* Update to require eulfedora 1.6 or greater for Fedora 3.8 support.
+* Adding fab commands for test, build
+
 Release 0.6
 -----------
 

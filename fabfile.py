@@ -56,6 +56,39 @@ def config_from_git():
     if eulindexer.__version_info__[-1]:
         env.rev_tag = '-r' + env.git_rev
 
+def all_deps():
+    '''Locally install all dependencies.'''
+    local('pip install -r pip-install-req.txt -r pip-dev-req.txt')
+    if os.path.exists('pip-install-opt.txt'):
+        local('pip install -r pip-install-opt.txt')
+    local("export DJANGO_SETTINGS_MODULE=%(project)s.settings" % env)
+
+@task
+def test():
+    '''Locally run all tests.'''
+    if os.path.exists('test-results'):
+        shutil.rmtree('test-results')
+    app_list = ['accounts', 'common', 'publication', 'harvest']
+    apps2test = ' '.join(map(lambda app: env.project + '.' + app +'.tests', app_list))
+    testing_cmd = 'python manage.py test --with-coverage --cover-package=%(project)s --cover-xml --with-xunit ' %env
+    testing_cmd += apps2test
+    local(testing_cmd)
+
+def doc():
+    '''Locally build documentation.'''
+    with lcd('doc'):
+        local('make clean html')
+
+@task
+def build():
+    '''Run a full local build/test cycle.'''
+    all_deps()
+    test()
+    doc()
+
+
+
+
 def prep_source():
     'Export the code from git and do local prep.'
     require('git_rev', 'build_dir',

@@ -1,5 +1,6 @@
-django<1.7
-eulfedora<=1.1
+Django==1.8.5
+html5lib==0.95
+eulfedora>=1.6
 #sunburnt
 # (MAYBE) 05/2014 need local version of sunburnt for Solr 4 join query support
 # NOTE: also want new enough dev version for python-requests support
@@ -7,3 +8,8 @@ eulfedora<=1.1
 # sunburnt requires *either* httplib2 or python-requests
 stompest>=2.1.4
 requests>=2.7.0
+
+# ssl cert handling
+pyOpenSSL
+httplib2.ca-certs-locater
+ndg-httpsclient
