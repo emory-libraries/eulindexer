@@ -6,3 +6,6 @@ dist
 doc/_build/
 static
 eulindexer/test-results
+.coverage
+coverage.xml
+nosetests.xml
