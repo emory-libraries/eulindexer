@@ -334,6 +334,10 @@ class Command(BaseCommand):
                 # get content models from resource index
                 obj_cmodels = list(self.repo.risearch.get_objects('info:fedora/%s' % pid,
                                                                   modelns.hasModel))
+                sample_obj = self.repo.get_object(pid)
+                obj_cmodels2 = sample_obj.get_models()
+                logger.debug('Logging object cmodels %s', obj_cmodels)
+                logger.debug('Logging object cmodels %s', obj_cmodels2)
                 # may include generic content models, but should not be a problem
 
                 # find which configured site(s) index the item
