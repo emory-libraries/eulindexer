@@ -9,7 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eulindexer.settings')
 
 from django.conf import settings
 
-app = Celery('eulindexer', broker=getattr(settings, 'BROKER_URL', None))
+app = Celery('eulindexer', backend=getattr(settings, 'CELERY_BACKEND_TYPE', None), broker=getattr(settings, 'BROKER_URL', None))
 
 # Using a string here means the worker will not have to
 # pickle the object when using Windows.

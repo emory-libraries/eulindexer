@@ -106,6 +106,11 @@ CELERY_RESULT_BACKEND='djcelery.backends.database:DatabaseBackend'
 # where that needs to be done
 CELERY_DEFAULT_QUEUE = 'eulindexer'
 
+
+#celery backend for rabbitmq
+CELERY_BACKEND_TYPE = 'amqp'
+BROKER_URL = 'amqp://'
+
 # explicitly assign a differently-named default queue to prevent
 # collisions with other projects using celery (allow celery to create queue for us)
 # NOTE: setting after including localsettings to allow local override
