@@ -55,6 +55,8 @@ from stompest.error import StompFrameError, StompConnectTimeout, \
     StompConnectionError, StompError
 from sunburnt import SolrError
 from time import sleep
+import celery
+from eulindexer.indexer.tasks import index_object
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -242,7 +244,7 @@ class Command(BaseCommand):
                         logger.debug('Received message: %s %s', method, pid)
                         self.listener.ack(frame)
 
-                        self.process_message(pid, method)
+                        self.process_message(pid, method) #processing message
 
                 except Exception as e:
                     # this most likely indicates that Fedora is no longer available;
@@ -336,6 +338,7 @@ class Command(BaseCommand):
                                                                   modelns.hasModel))
                 sample_obj = self.repo.get_object(pid)
                 obj_cmodels2 = sample_obj.get_models()
+                logger.debug('Logging object cmodels %s', modelns.hasModel)
                 logger.debug('Logging object cmodels %s', obj_cmodels)
                 logger.debug('Logging object cmodels %s', obj_cmodels2)
                 # may include generic content models, but should not be a problem
@@ -349,7 +352,7 @@ class Command(BaseCommand):
                         else:
                             # subsequent site - add the site to the existing queue item
                             self.to_index[pid].add_site(site)
-
+                            
     def process_queue(self):
         '''Loop through items that have been queued for indexing; if
         the configured delay time has passed, then attempt to index
@@ -360,6 +363,7 @@ class Command(BaseCommand):
                          ', '.join(self.to_index.keys()))
 
             queue_remove = []
+            migration_tasks = celery.result.ResultSet([])
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, attempt to index
                 if datetime.now() - self.to_index[pid].time >= self.index_delta:
@@ -370,7 +374,8 @@ class Command(BaseCommand):
 
                     # a single object could be indexed by multiple sites; index all of them
                     for site in sites_to_index:
-                        self.index_item(pid, self.to_index[pid], site)
+                        # self.index_item(pid, self.to_index[pid], site)
+                        migration_tasks.add(index_object.delay(pid, self.to_index[pid], site, self.indexes))
 
                     if not self.to_index[pid].sites_to_index:
                         # if all configured sites indexed successfully
@@ -378,72 +383,91 @@ class Command(BaseCommand):
                         # store pid to be removed from the queue
                         queue_remove.append(pid)
 
+            # wait for tasks to complete
+            while migration_tasks.waiting():
+                try:
+                    migration_tasks.join()
+                except Exception:
+                    # exceptions from tasks gets propagated here, but ignore
+                    # them and report based on success/failure
+                    pass
 
+            print '%d indexing completed, %s failures' % \
+                (migration_tasks.completed_count(),
+                'some' if migration_tasks.failed() else 'no')
+
+            for result in migration_tasks.results:
+                if result.state == celery.states.FAILURE:
+                    print 'Error: %s' % result.result
+                else:
+                    print 'Success: %s' % result.result
             # clear out any pids that were indexed successfully OR
             # errored from the list of objects still to be indexed
             for pid in queue_remove:
                 del self.to_index[pid]
 
-    def index_item(self, pid, queueitem, site):
-        '''Index an item in a single configured site index and handle
-        any errors, updating the queueitem retry count and marking
-        sites as indexed according to success or any errors.
+    # def index_item(self, pid, queueitem, site):
+    #     '''Index an item in a single configured site index and handle
+    #     any errors, updating the queueitem retry count and marking
+    #     sites as indexed according to success or any errors.
 
-        :param pid: pid for the item to be indexed
-        :param queueitem: :class:`QueueItem`
-        :param site: name of the site index to use
-        '''
-        try:
-            # tell the site index to index the item - returns True on success
-            if self.indexes[site].index_item(pid):
-                # mark the site index as complete on the queued item
-                self.to_index[pid].site_complete(site)
+    #     :param pid: pid for the item to be indexed
+    #     :param queueitem: :class:`QueueItem`
+    #     :param site: name of the site index to use
+    #     '''
 
-        except RecoverableIndexError as rie:
-            # If the index attempt resulted in error that we
-            # can potentially recover from, keep the item in
-            # the queue and attempt to index it again.
 
-            # Increase the count of index attempts, so we know when to stop.
-            self.to_index[pid].tries += 1
+    #     try:
+    #         # tell the site index to index the item - returns True on success
+    #         if self.indexes[site].index_item(pid):
+    #             # mark the site index as complete on the queued item
+    #             self.to_index[pid].site_complete(site)
 
-            # quit when we reached the configured number of index attempts
-            if self.to_index[pid].tries >= self.index_max_tries:
-                logger.error("Failed to index %s (%s) after %d tries: %s",
-                              pid, site, self.to_index[pid].tries, rie)
+    #     except RecoverableIndexError as rie:
+    #         # If the index attempt resulted in error that we
+    #         # can potentially recover from, keep the item in
+    #         # the queue and attempt to index it again.
 
-                err = IndexError(object_id=pid, site=site,
-                                 detail='Failed to index after %d attempts: %s' % \
-                                 (self.to_index[pid].tries, rie))
-                err.save()
-                # we've hit the index retry limit, so set site as complete on the queue item
-                self.to_index[pid].site_complete(site)
+    #         # Increase the count of index attempts, so we know when to stop.
+    #         self.to_index[pid].tries += 1
 
-            else:
-                logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s",
-                             pid, site, self.to_index[pid].tries, rie)
+    #         # quit when we reached the configured number of index attempts
+    #         if self.to_index[pid].tries >= self.index_max_tries:
+    #             logger.error("Failed to index %s (%s) after %d tries: %s",
+    #                           pid, site, self.to_index[pid].tries, rie)
 
-                # update the index time - wait the configured index delay before
-                # attempting to reindex again
-                self.to_index[pid].time = datetime.now()
+    #             err = IndexError(object_id=pid, site=site,
+    #                              detail='Failed to index after %d attempts: %s' % \
+    #                              (self.to_index[pid].tries, rie))
+    #             err.save()
+    #             # we've hit the index retry limit, so set site as complete on the queue item
+    #             self.to_index[pid].site_complete(site)
 
-        except Exception as e:
-            logging.error("Failed to index %s (%s): %s",
-                          pid, site, e)
+    #         else:
+    #             logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s",
+    #                          pid, site, self.to_index[pid].tries, rie)
 
-            # Add a prefix to the detail error message if we
-            # can identify what type of error this is.
-            detail_type = ''
-            if isinstance(e, SolrError):
-                detail_type = 'Solr Error: '
-            msg = '%s%s' % (detail_type, e)
-            err = IndexError(object_id=pid, site=site,
-                             detail=msg)
-            err.save()
+    #             # update the index time - wait the configured index delay before
+    #             # attempting to reindex again
+    #             self.to_index[pid].time = datetime.now()
 
-            # any exception not caught in the recoverable error block
-            # should not be attempted again - set site as complete on queue item
-            self.to_index[pid].site_complete(site)
+    #     except Exception as e:
+    #         logging.error("Failed to index %s (%s): %s",
+    #                       pid, site, e)
+
+    #         # Add a prefix to the detail error message if we
+    #         # can identify what type of error this is.
+    #         detail_type = ''
+    #         if isinstance(e, SolrError):
+    #             detail_type = 'Solr Error: '
+    #         msg = '%s%s' % (detail_type, e)
+    #         err = IndexError(object_id=pid, site=site,
+    #                          detail=msg)
+    #         err.save()
+
+    #         # any exception not caught in the recoverable error block
+    #         # should not be attempted again - set site as complete on queue item
+    #         self.to_index[pid].site_complete(site)
 
 
     def interrupt_handler(self, signum, frame):

@@ -92,9 +92,27 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'eulfedora',
     'eulindexer.indexer',
+    'djcelery',
 ]
 
 REPO_DOCUMENT_CLASS = 'fedora.models.DocumentObject'
+
+# Celery Config - standard stuff that will not change from project to project
+import djcelery
+djcelery.setup_loader()
+
+CELERY_RESULT_BACKEND='djcelery.backends.database:DatabaseBackend'
+# NOTE: should be possible to configure a default queue, but not sure
+# where that needs to be done
+CELERY_DEFAULT_QUEUE = 'eulindexer'
+
+# explicitly assign a differently-named default queue to prevent
+# collisions with other projects using celery (allow celery to create queue for us)
+# NOTE: setting after including localsettings to allow local override
+CELERY_ROUTES = {
+    'eulindexer.indexer.tasks.indexer': {'queue': CELERY_DEFAULT_QUEUE},
+    'eulindexer.indexer.tasks.reinxdex': {'queue': CELERY_DEFAULT_QUEUE}
+}
 
 from localsettings import *
 
