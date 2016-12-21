@@ -65,7 +65,9 @@ from optparse import make_option
 from Queue import Queue, Empty as EmptyQueue
 from rdflib import URIRef
 import threading
+from sunburnt import SolrError
 from time import sleep
+import celery
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -255,17 +257,7 @@ class Command(BaseCommand):
         self.stats['total'] = 0
         self.stats['indexed'] = 0
         self.stats['error'] = 0
-
-        # start the requested number of worker threads
-        # NOTE: might not want multiple threads for just a few pids...
-        for i in range(options.get('concurrency', 1)):
-            v = Indexer(self.todo_queue, self.done_queue)
-            v.start()
-
-        # start a single reporter thread to pick up completed items
-        vr = Reporter(self.done_queue, options, self.stats, pbar, self.stdout)
-        vr.start()
-
+        migration_tasks = celery.result.ResultSet([])
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
@@ -281,31 +273,29 @@ class Command(BaseCommand):
             # the current object should be indexed by
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
-                    self.todo_queue.put((index, obj.pid))
+                   migration_tasks.add(reindex_object.delay(index, obj.pid))
 
-        # queue.join blocks; check periodically if the need to check/sleep/interrupt
-        while not self.todo_queue.empty():
-            sleep(1)
-        self.todo_queue.join()
+        # wait for tasks to complete
+        while migration_tasks.waiting():
+            try:
+                migration_tasks.join()
+            except Exception:
+                # exceptions from tasks gets propagated here, but ignore
+                # them and report based on success/failure
+                pass
 
-        while not self.done_queue.empty():
-            sleep(1)
-        self.done_queue.join()
+        print '%d indexing completed, %s failures' % \
+            (migration_tasks.completed_count(),
+            'some' if migration_tasks.failed() else 'no')
 
-        end_time = datetime.now()
+        for result in migration_tasks.results:
+            if result.state == celery.states.FAILURE:
+                print 'Error: %s' % result.result
+            else:
+                print 'Success: %s' % result.result
+       
         if pbar:
-            pbar.finish()
-
-        if verbosity >= self.v_normal:
-            # report # of items indexed, even if it is zero
-            timediff = (end_time - start_time)
-
-            self.stdout.write('Indexed %d item%s in %s\n' % \
-                              (self.stats['total'], '' if self.stats['total'] == 1 else 's',
-                               timediff))
-            # if err count is not zero, report it also
-            if self.stats['error']:
-                self.stdout.write('%(error)d errors on attempts to index\n' % self.stats)
+            pbar.finish()      
 
     def load_indexes(self):
         # load configured site indexes so we can figure out which pids to index where
@@ -376,82 +366,3 @@ class Command(BaseCommand):
         '''
         # FIXME: more efficient way to do this?
         return len(list(self.cmodels_graph.subjects(predicate=modelns.hasModel)))
-
-
-class Indexer(threading.Thread):
-    '''Thread class for indexing items in a queue.'''
-    daemon = True
-
-    def __init__(self, todo_queue, done_queue):
-        threading.Thread.__init__(self)
-        self.todo = todo_queue
-        self.done = done_queue
-
-    def run(self):
-        while True:
-            try:
-                item = self.todo.get()
-                # item should be a tuple of site index and pid
-                site_index, pid = item
-                try:
-                    indexed = site_index.index_item(pid)
-                    err = None
-                except Exception as err:
-                    indexed = False
-
-                # stick in done queue a tuple of site index, pid,
-                # index success or failure, and error if any
-                self.done.put((site_index, pid, indexed, err))
-
-                self.todo.task_done()
-            except EmptyQueue:
-                sleep(1)
-
-class Reporter(threading.Thread):
-    '''Thread class with common logic for handling items in the
-    ``done`` queue and reporting where appropriate.'''
-
-    daemon = True
-
-    def __init__(self, done_queue, options, stats, pbar=None, stdout=None):
-        threading.Thread.__init__(self)
-        self.done = done_queue
-        self.options = options
-        self.pbar = pbar
-        self.stats = stats
-        self.stdout = stdout
-
-        # keep track of total unique pids indexed (even if indexed in multiple sites)
-        self.pids = set()
-
-    def run(self):
-        while True:
-            try:
-                site_index, pid, indexed, err = self.done.get()
-                self.pids.add(pid)
-                # successfully indexed
-                if indexed:
-                    self.stats['indexed'] += 1
-                    if int(self.options.get('verbosity', Command.v_normal)) > Command.v_normal:
-                        # if site was specified as an argument, don't report it for each item
-                        if self.options['site']:
-                            site_detail = ''
-                        else:
-                            site_detail = '(site: %s)' % site_index.name
-                        self.stdout.write('Indexed %s %s\n' % (pid, site_detail))
-
-                # error indexing
-                else:
-                    # NOTE: pid could be redundant, but better to include in case not
-                    self.stdout.write('Index error in site %s for %s: %s\n' % \
-                                      (site_index.name, pid, err))
-                    self.stats['error'] += 1
-
-                self.stats['total'] = len(self.pids)
-                if self.pbar:
-                    self.pbar.update(self.stats['total'])
-
-                self.done.task_done()
-
-            except EmptyQueue:
-                sleep(1)

@@ -18,6 +18,28 @@ from eulindexer.indexer.models import IndexError, \
 
 logger = logging.getLogger(__name__)
 
+@shared_task
+def reindex_object(site_index, pid):
+    
+    try:
+        indexed = site_index.index_item(pid)
+        err = None
+    except Exception as e:
+        logging.error("Failed to index %s (%s): %s",
+                      pid, site, e)
+
+        # Add a prefix to the detail error message if we
+        # can identify what type of error this is.
+        detail_type = ''
+        if isinstance(e, SolrError):
+            detail_type = 'Solr Error: '
+        msg = '%s%s' % (detail_type, e)
+        err = IndexError(object_id=pid, site=site,
+                         detail=msg)
+        err.save()
+
+    
+
 
 @shared_task
 def index_object(pid, queueitem, site):
