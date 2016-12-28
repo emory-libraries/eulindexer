@@ -109,14 +109,14 @@ CELERY_DEFAULT_QUEUE = 'eulindexer'
 
 #celery backend for rabbitmq
 CELERY_BACKEND_TYPE = 'amqp'
-BROKER_URL = 'amqp://'
+BROKER_URL = 'amqp://guest:guest@localhost:5672//'
 
 # explicitly assign a differently-named default queue to prevent
 # collisions with other projects using celery (allow celery to create queue for us)
 # NOTE: setting after including localsettings to allow local override
 CELERY_ROUTES = {
-    'eulindexer.indexer.tasks.indexer': {'queue': CELERY_DEFAULT_QUEUE},
-    'eulindexer.indexer.tasks.reinxdex': {'queue': CELERY_DEFAULT_QUEUE}
+    'eulindexer.indexer.tasks.index_object': {'queue': CELERY_DEFAULT_QUEUE},
+    'eulindexer.indexer.tasks.reindex_object': {'queue': CELERY_DEFAULT_QUEUE}
 }
 
 from localsettings import *
