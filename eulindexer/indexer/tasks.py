@@ -7,7 +7,6 @@ import tempfile
 import traceback
 from datetime import datetime
 from celery import shared_task
-from pymediainfo import MediaInfo
 from sunburnt import SolrError
 
 from django.conf import settings
@@ -18,9 +17,11 @@ from eulindexer.indexer.models import IndexError, \
 
 logger = logging.getLogger(__name__)
 
-@shared_task
-def reindex_object(site_index, pid):
-    
+
+@shared_task(bind=True)
+def reindex_object(site, pid):
+    indexes = load_indexes()
+    site_index = indexes[site]
     try:
         indexed = site_index.index_item(pid)
         err = None
@@ -37,11 +38,12 @@ def reindex_object(site_index, pid):
         err = IndexError(object_id=pid, site=site,
                          detail=msg)
         err.save()
+    return 'Indexed pid %s' % pid
 
     
 
 
-@shared_task
+@shared_task(bind=True)
 def index_object(pid, queueitem, site):
 	# initialize all indexes configured in django settings
     indexes, init_errors = init_configured_indexes()
@@ -98,4 +100,17 @@ def index_object(pid, queueitem, site):
         # any exception not caught in the recoverable error block
         # should not be attempted again - set site as complete on queue item
         queueitem.site_complete(site)
+
+    return 'Indexed pid %s' % pid
+
+def load_indexes(self):
+        # load configured site indexes so we can figure out which pids to index where
+        # report on any sites that failed to load
+        indexes, init_errors = init_configured_indexes()
+        if init_errors:
+            msg = 'Error loading index configuration for the following site(s):\n'
+            for site, err in init_errors.iteritems():
+                msg += '\t%s:\t%s\n' % (site, err)
+                self.stdout.write(msg + '\n')
+        return indexes
 

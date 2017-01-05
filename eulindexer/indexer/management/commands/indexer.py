@@ -56,6 +56,7 @@ from stompest.error import StompFrameError, StompConnectTimeout, \
 from sunburnt import SolrError
 from time import sleep
 import celery
+from celery.result import ResultSet
 from eulindexer.indexer.tasks import index_object
 
 from django.core.management.base import BaseCommand, CommandError
@@ -352,7 +353,7 @@ class Command(BaseCommand):
                         else:
                             # subsequent site - add the site to the existing queue item
                             self.to_index[pid].add_site(site)
-                            
+
     def process_queue(self):
         '''Loop through items that have been queued for indexing; if
         the configured delay time has passed, then attempt to index
@@ -363,7 +364,7 @@ class Command(BaseCommand):
                          ', '.join(self.to_index.keys()))
 
             queue_remove = []
-            migration_tasks = celery.result.ResultSet([])
+            # migration_tasks = ResultSet([])
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, attempt to index
                 if datetime.now() - self.to_index[pid].time >= self.index_delta:
@@ -375,7 +376,7 @@ class Command(BaseCommand):
                     # a single object could be indexed by multiple sites; index all of them
                     for site in sites_to_index:
                         # self.index_item(pid, self.to_index[pid], site)
-                        migration_tasks.add(index_object.delay(pid, self.to_index[pid], site, self.indexes))
+                        index_object.delay(pid, self.to_index[pid], site, self.indexes)
 
                     if not self.to_index[pid].sites_to_index:
                         # if all configured sites indexed successfully
@@ -384,13 +385,13 @@ class Command(BaseCommand):
                         queue_remove.append(pid)
 
             # wait for tasks to complete
-            while migration_tasks.waiting():
-                try:
-                    migration_tasks.join()
-                except Exception:
-                    # exceptions from tasks gets propagated here, but ignore
-                    # them and report based on success/failure
-                    pass
+            # while migration_tasks.waiting():
+            #     try:
+            #         migration_tasks.join()
+            #     except Exception:
+            #         # exceptions from tasks gets propagated here, but ignore
+            #         # them and report based on success/failure
+            #         pass
 
             print '%d indexing completed, %s failures' % \
                 (migration_tasks.completed_count(),

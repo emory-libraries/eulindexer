@@ -109,7 +109,7 @@ CELERY_DEFAULT_QUEUE = 'eulindexer'
 
 #celery backend for rabbitmq
 CELERY_BACKEND_TYPE = 'amqp'
-BROKER_URL = 'amqp://guest:guest@localhost:5672//'
+
 
 # explicitly assign a differently-named default queue to prevent
 # collisions with other projects using celery (allow celery to create queue for us)

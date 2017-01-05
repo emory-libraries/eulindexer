@@ -68,6 +68,7 @@ import threading
 from sunburnt import SolrError
 from time import sleep
 import celery
+from celery.result import ResultSet
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -82,6 +83,7 @@ except ImportError:
 
 from eulfedora.rdfns import model as modelns
 from eulfedora.server import Repository
+from eulindexer.indexer.tasks import reindex_object
 
 from eulindexer.indexer.models import init_configured_indexes, \
      SiteIndex, SiteUnavailable
@@ -257,7 +259,7 @@ class Command(BaseCommand):
         self.stats['total'] = 0
         self.stats['indexed'] = 0
         self.stats['error'] = 0
-        migration_tasks = celery.result.ResultSet([])
+        migration_tasks = ResultSet([])
         for pid in self.pids:
             obj = self.repo.get_object(pid)
             # query the local rdf graph of pids and cmodels to get a list for this object
@@ -273,7 +275,8 @@ class Command(BaseCommand):
             # the current object should be indexed by
             for site, index in self.indexes.iteritems():
                 if index.indexes_item(content_models):
-                   migration_tasks.add(reindex_object.delay(index, obj.pid))
+                   print index.__dict__
+                   migration_tasks.add(reindex_object.delay(site, obj.pid))
 
         # wait for tasks to complete
         while migration_tasks.waiting():
@@ -306,6 +309,7 @@ class Command(BaseCommand):
             for site, err in init_errors.iteritems():
                 msg += '\t%s:\t%s\n' % (site, err)
                 self.stdout.write(msg + '\n')
+    
 
 
     def load_pid_cmodels(self, pids=None, content_models=None):
