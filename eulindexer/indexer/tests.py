@@ -26,7 +26,7 @@ from sunburnt import SolrError
 
 from django.conf import settings
 from django.core.management.base import CommandError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.test.utils import override_settings
 
 from eulfedora.server import Repository
@@ -35,11 +35,12 @@ from eulindexer.indexer.management.commands import indexer, reindex
 from eulindexer.indexer.management.commands.indexer import QueueItem
 from eulindexer.indexer.models import SiteIndex, IndexError, \
     init_configured_indexes, IndexDataReadError, SiteUnavailable
+from eulindexer.indexer.tasks import index_object
 
 
 @override_settings(INDEXER_STOMP_SERVER='localhost',
     INDEXER_STOMP_PORT='61613',
-    INDEXER_STOMP_CHANNEL='/topic/foo')
+    INDEXER_STOMP_CHANNEL='/topic/foo',CELERY_ALWAYS_EAGER=True)
 class IndexerTest(TestCase):
     '''Unit tests for the indexer manage command.'''
     # test the indexer command and its methods here
