@@ -384,6 +384,66 @@ class Command(BaseCommand):
             for pid in queue_remove:
                 del self.to_index[pid]
 
+    def index_item(self, pid, queueitem, site):
+        '''Index an item in a single configured site index and handle
+        any errors, updating the queueitem retry count and marking
+        sites as indexed according to success or any errors.
+        :param pid: pid for the item to be indexed
+        :param queueitem: :class:`QueueItem`
+        :param site: name of the site index to use
+        '''
+        try:
+            # tell the site index to index the item - returns True on success
+            if self.indexes[site].index_item(pid):
+                # mark the site index as complete on the queued item
+                self.to_index[pid].site_complete(site)
+
+        except RecoverableIndexError as rie:
+            # If the index attempt resulted in error that we
+            # can potentially recover from, keep the item in
+            # the queue and attempt to index it again.
+
+            # Increase the count of index attempts, so we know when to stop.
+            self.to_index[pid].tries += 1
+
+            # quit when we reached the configured number of index attempts
+            if self.to_index[pid].tries >= self.index_max_tries:
+                logger.error("Failed to index %s (%s) after %d tries: %s",
+                              pid, site, self.to_index[pid].tries, rie)
+
+                err = IndexError(object_id=pid, site=site,
+                                 detail='Failed to index after %d attempts: %s' % \
+                                 (self.to_index[pid].tries, rie))
+                err.save()
+                # we've hit the index retry limit, so set site as complete on the queue item
+                self.to_index[pid].site_complete(site)
+
+            else:
+                logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s",
+                             pid, site, self.to_index[pid].tries, rie)
+
+                # update the index time - wait the configured index delay before
+                # attempting to reindex again
+                self.to_index[pid].time = datetime.now()
+
+        except Exception as e:
+            logging.error("Failed to index %s (%s): %s",
+                          pid, site, e)
+
+            # Add a prefix to the detail error message if we
+            # can identify what type of error this is.
+            detail_type = ''
+            if isinstance(e, SolrError):
+                detail_type = 'Solr Error: '
+            msg = '%s%s' % (detail_type, e)
+            err = IndexError(object_id=pid, site=site,
+                             detail=msg)
+            err.save()
+
+            # any exception not caught in the recoverable error block
+            # should not be attempted again - set site as complete on queue item
+            self.to_index[pid].site_complete(site)
+
 
     def interrupt_handler(self, signum, frame):
         '''Gracefully handle a SIGINT, if possible.  Reports status if
