@@ -3,6 +3,13 @@
 Change Log
 ==========
 
+Release 0.8
+-----------
+
+* Update indexer to work with celery
+* Update indexer manage command to work with celery
+* Update reindex manage command to  work with celery
+
 Release 0.7
 -----------
 

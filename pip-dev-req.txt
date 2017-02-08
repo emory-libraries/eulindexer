@@ -6,3 +6,4 @@ fabric
 pyPdf
 nose==1.2.1
 django-nose
+

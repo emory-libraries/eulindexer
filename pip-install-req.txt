@@ -8,6 +8,9 @@ eulfedora>=1.6
 # sunburnt requires *either* httplib2 or python-requests
 stompest>=2.1.4
 requests>=2.7.0
+celery==3.1.24
+eulcommon
+django-celery>=3.0
 
 # ssl cert handling
 pyOpenSSL
