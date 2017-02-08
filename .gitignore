@@ -9,3 +9,7 @@ eulindexer/test-results
 .coverage
 coverage.xml
 nosetests.xml
+eulindexer/.Python
+eulindexer/bin/
+eulindexer/include/
+eulindexer/lib/

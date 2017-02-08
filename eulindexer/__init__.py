@@ -14,9 +14,15 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-__version_info__ = (0, 7, 0, 'dev')
+__version_info__ = (0, 8, 0, 'dev')
 
 # Dot-connect all but the last. Last is dash-connected if not None.
 __version__ = '.'.join([ str(i) for i in __version_info__[:-1] ])
 if __version_info__[-1] is not None:
     __version__ += ('-%s' % (__version_info__[-1],))
+
+
+
+# make sure celery app is always imported when
+# Django starts so that shared_task will use this app.
+from .celery import app as celery_app

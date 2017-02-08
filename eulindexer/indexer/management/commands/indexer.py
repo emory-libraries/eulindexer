@@ -55,6 +55,9 @@ from stompest.error import StompFrameError, StompConnectTimeout, \
     StompConnectionError, StompError
 from sunburnt import SolrError
 from time import sleep
+import celery
+from celery.result import ResultSet
+from eulindexer.indexer.tasks import index_object
 
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
@@ -75,7 +78,7 @@ class Command(BaseCommand):
     # - since an object may be updated by several API calls in sequence, delay a bit
     #   so that hopefully we only index it once for a single group of updates
     # TODO: make delay configurable
-    index_delay = 4  # time delay after the *first* modification message before indexing should be done
+    index_delay = 2  # time delay after the *first* modification message before indexing should be done
     index_delta = timedelta(seconds=index_delay)
     index_max_tries = 3  # number of times to try indexing an item, if a recoverable error happens
 
@@ -84,7 +87,7 @@ class Command(BaseCommand):
     listener = None
 
     # connection error handling/retry settings
-    retry_reconnect_wait = 5
+    retry_reconnect_wait = 3
     # if we lose the connection to fedora, how long do we wait between attempts to reconnect?
     max_reconnect_retries = 5
     # how many times do we try to reconnect to fedora before we give up?
@@ -95,15 +98,15 @@ class Command(BaseCommand):
         make_option('--max-reconnect-retries', type='int', dest='max_reconnect_retries',
                     default=max_reconnect_retries,
                     help='How many times to try reconnecting if the connection ' +
-                    	 'is lost (default: %default; -1 for no maximum)'),
+                         'is lost (default: %default; -1 for no maximum)'),
         make_option('--retry-reconnect-wait', type='int', dest='retry_reconnect_wait',
                     default=retry_reconnect_wait,
                     help='How many seconds to wait between reconnect attempts if the ' +
-                    	 'connection is lost (default: %default)'),
+                         'connection is lost (default: %default)'),
         make_option('--index-max-tries', type='int', dest='index_max_tries',
                     default=index_max_tries,
                     help='Number of times to attempt indexing an item when a potentially ' +
-                    	 'recoverable error is encountered'),
+                         'recoverable error is encountered'),
         make_option('--idle-reconnect', type='int', dest='idle_reconnect',
                     help='Reconnect when there has been no activity for the specified ' +
                          'number of minutes')
@@ -147,7 +150,7 @@ class Command(BaseCommand):
                 self.stdout.write('\t%s\n%s\n' % (site, index.config_summary()))
 
     # verbosity option set by django BaseCommand
-    v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
+    v_normal = 1        # 1 = normal, 0 = minimal, 2 = all
 
     def handle(self, verbosity=v_normal, retry_reconnect_wait=None,
                max_reconnect_retries=None,  index_max_tries=None,
@@ -171,7 +174,6 @@ class Command(BaseCommand):
             self.idle_reconnect = timedelta(minutes=idle_reconnect)
 
         # check for required settings
-
         self.repo = Repository()
         try:
             self.init_listener()
@@ -183,7 +185,6 @@ class Command(BaseCommand):
 
         # load site index configurations
         self.init_indexes()
-
         while (True):
 
             # check time since last activity if idle reconnect is configured
@@ -230,7 +231,6 @@ class Command(BaseCommand):
                 # get an exception on the receiveFrame call - catch that
                 # error and try to reconnect
                 try:
-
                     # if there is a new message, process it
                     if data_available:
                         frame = self.listener.receiveFrame()
@@ -241,8 +241,7 @@ class Command(BaseCommand):
                         method = frame.headers['methodName']
                         logger.debug('Received message: %s %s', method, pid)
                         self.listener.ack(frame)
-
-                        self.process_message(pid, method)
+                        self.process_message(pid, method) #processing message
 
                 except Exception as e:
                     # this most likely indicates that Fedora is no longer available;
@@ -336,6 +335,7 @@ class Command(BaseCommand):
                                                                   modelns.hasModel))
                 sample_obj = self.repo.get_object(pid)
                 obj_cmodels2 = sample_obj.get_models()
+                logger.debug('Logging object cmodels %s', modelns.hasModel)
                 logger.debug('Logging object cmodels %s', obj_cmodels)
                 logger.debug('Logging object cmodels %s', obj_cmodels2)
                 # may include generic content models, but should not be a problem
@@ -360,6 +360,7 @@ class Command(BaseCommand):
                          ', '.join(self.to_index.keys()))
 
             queue_remove = []
+            migration_tasks = ResultSet([])
             for pid in self.to_index.iterkeys():
                 # if we've waited the configured delay time, attempt to index
                 if datetime.now() - self.to_index[pid].time >= self.index_delta:
@@ -370,7 +371,9 @@ class Command(BaseCommand):
 
                     # a single object could be indexed by multiple sites; index all of them
                     for site in sites_to_index:
-                        self.index_item(pid, self.to_index[pid], site)
+                        # self.index_item(pid, self.to_index[pid], site)
+                        index_object.delay(pid, site)
+                        self.to_index[pid].site_complete(site)
 
                     if not self.to_index[pid].sites_to_index:
                         # if all configured sites indexed successfully
@@ -378,72 +381,8 @@ class Command(BaseCommand):
                         # store pid to be removed from the queue
                         queue_remove.append(pid)
 
-
-            # clear out any pids that were indexed successfully OR
-            # errored from the list of objects still to be indexed
             for pid in queue_remove:
                 del self.to_index[pid]
-
-    def index_item(self, pid, queueitem, site):
-        '''Index an item in a single configured site index and handle
-        any errors, updating the queueitem retry count and marking
-        sites as indexed according to success or any errors.
-
-        :param pid: pid for the item to be indexed
-        :param queueitem: :class:`QueueItem`
-        :param site: name of the site index to use
-        '''
-        try:
-            # tell the site index to index the item - returns True on success
-            if self.indexes[site].index_item(pid):
-                # mark the site index as complete on the queued item
-                self.to_index[pid].site_complete(site)
-
-        except RecoverableIndexError as rie:
-            # If the index attempt resulted in error that we
-            # can potentially recover from, keep the item in
-            # the queue and attempt to index it again.
-
-            # Increase the count of index attempts, so we know when to stop.
-            self.to_index[pid].tries += 1
-
-            # quit when we reached the configured number of index attempts
-            if self.to_index[pid].tries >= self.index_max_tries:
-                logger.error("Failed to index %s (%s) after %d tries: %s",
-                              pid, site, self.to_index[pid].tries, rie)
-
-                err = IndexError(object_id=pid, site=site,
-                                 detail='Failed to index after %d attempts: %s' % \
-                                 (self.to_index[pid].tries, rie))
-                err.save()
-                # we've hit the index retry limit, so set site as complete on the queue item
-                self.to_index[pid].site_complete(site)
-
-            else:
-                logging.warn("Recoverable error attempting to index %s (%s), %d tries: %s",
-                             pid, site, self.to_index[pid].tries, rie)
-
-                # update the index time - wait the configured index delay before
-                # attempting to reindex again
-                self.to_index[pid].time = datetime.now()
-
-        except Exception as e:
-            logging.error("Failed to index %s (%s): %s",
-                          pid, site, e)
-
-            # Add a prefix to the detail error message if we
-            # can identify what type of error this is.
-            detail_type = ''
-            if isinstance(e, SolrError):
-                detail_type = 'Solr Error: '
-            msg = '%s%s' % (detail_type, e)
-            err = IndexError(object_id=pid, site=site,
-                             detail=msg)
-            err.save()
-
-            # any exception not caught in the recoverable error block
-            # should not be attempted again - set site as complete on queue item
-            self.to_index[pid].site_complete(site)
 
 
     def interrupt_handler(self, signum, frame):
