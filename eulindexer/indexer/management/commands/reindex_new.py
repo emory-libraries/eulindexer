@@ -125,7 +125,7 @@ class Command(BaseCommand):
     todo_queue = Queue()
     done_queue = Queue()
 
-    v_normal = 1	    # 1 = normal, 0 = minimal, 2 = all
+    v_normal = 1        # 1 = normal, 0 = minimal, 2 = all
 
     def handle(self, *pids, **options):
         # verbosity should be set by django BaseCommand standard options
@@ -277,15 +277,6 @@ class Command(BaseCommand):
                 if index.indexes_item(content_models):
                    print index.__dict__
                    migration_tasks.add(reindex_object.delay(site, obj.pid))
-
-        # wait for tasks to complete
-        while migration_tasks.waiting():
-            try:
-                migration_tasks.join()
-            except Exception:
-                # exceptions from tasks gets propagated here, but ignore
-                # them and report based on success/failure
-                pass
 
         print '%d indexing completed, %s failures' % \
             (migration_tasks.completed_count(),

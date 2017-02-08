@@ -101,7 +101,7 @@ REPO_DOCUMENT_CLASS = 'fedora.models.DocumentObject'
 import djcelery
 djcelery.setup_loader()
 
-CELERY_RESULT_BACKEND='djcelery.backends.database:DatabaseBackend'
+CELERY_RESULT_BACKEND='amqp'
 # NOTE: should be possible to configure a default queue, but not sure
 # where that needs to be done
 CELERY_DEFAULT_QUEUE = 'eulindexer'
