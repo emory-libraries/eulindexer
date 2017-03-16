@@ -3,6 +3,11 @@
 Change Log
 ==========
 
+Release 0.8.1
+-----------
+
+* Fixing bugs related to rabbit MQ and celery
+
 Release 0.8
 -----------
 

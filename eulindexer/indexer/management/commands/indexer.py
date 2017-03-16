@@ -384,7 +384,6 @@ class Command(BaseCommand):
             for pid in queue_remove:
                 del self.to_index[pid]
 
-
     def interrupt_handler(self, signum, frame):
         '''Gracefully handle a SIGINT, if possible.  Reports status if
         main loop is currently part-way through pages for a volume,
